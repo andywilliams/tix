@@ -131,6 +131,29 @@ export async function queryMyTickets(
     const pageId = (page as any).id;
     const url = (page as any).url || `https://notion.so/${pageId.replace(/-/g, '')}`;
 
+    // Scan page blocks for GitHub links
+    let githubLinks: string[] = [];
+    try {
+      const blocks = await notion.blocks.children.list({ block_id: pageId });
+      for (const block of blocks.results) {
+        const links = extractGitHubLinksFromBlock(block);
+        githubLinks.push(...links);
+      }
+    } catch {
+      // Page content might not be accessible
+    }
+
+    // Also check properties for GitHub URLs
+    for (const [, prop] of Object.entries(props)) {
+      const val = extractPropertyValue(prop);
+      if (typeof val === 'string') {
+        const links = extractGitHubLinksFromText(val);
+        githubLinks.push(...links);
+      }
+    }
+
+    githubLinks = [...new Set(githubLinks)];
+
     tickets.push({
       id: pageId,
       title: title || '(untitled)',
@@ -138,6 +161,7 @@ export async function queryMyTickets(
       priority: priority || '—',
       lastUpdated: lastUpdated ? new Date(lastUpdated).toLocaleDateString() : '—',
       url,
+      githubLinks,
     });
   }
 

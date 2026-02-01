@@ -2,6 +2,34 @@ import { execSync } from 'child_process';
 import { PRInfo } from '../types';
 
 /**
+ * Get count of unresolved review comments on a PR via GraphQL.
+ */
+export function getUnresolvedCommentCount(owner: string, repo: string, prNumber: number): number {
+  try {
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes { isResolved }
+            }
+          }
+        }
+      }
+    `;
+    const result = execSync(
+      `gh api graphql -f query='${query.replace(/\n/g, ' ')}' -F owner='${owner}' -F repo='${repo}' -F number=${prNumber}`,
+      { stdio: 'pipe', encoding: 'utf-8' }
+    );
+    const data = JSON.parse(result);
+    const threads = data?.data?.repository?.pullRequest?.reviewThreads?.nodes || [];
+    return threads.filter((t: any) => !t.isResolved).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Check if `gh` CLI is available and authenticated.
  */
 export function checkGhCli(): boolean {
@@ -74,6 +102,10 @@ export async function getPRInfo(prUrl: string): Promise<PRInfo | null> {
     else if (pr.reviewDecision === 'CHANGES_REQUESTED') reviews = 'changes_requested';
     else if (pr.reviewDecision === 'REVIEW_REQUIRED') reviews = 'pending';
 
+    const unresolvedComments = state === 'open'
+      ? getUnresolvedCommentCount(owner, repo, number)
+      : 0;
+
     return {
       url: prUrl,
       repo: fullRepo,
@@ -83,6 +115,7 @@ export async function getPRInfo(prUrl: string): Promise<PRInfo | null> {
       checks,
       reviews,
       author: pr.author?.login || '',
+      unresolvedComments,
     };
   } catch (err: any) {
     // Return a minimal info object on failure
@@ -95,6 +128,7 @@ export async function getPRInfo(prUrl: string): Promise<PRInfo | null> {
       checks: 'unknown',
       reviews: 'unknown',
       author: '',
+      unresolvedComments: 0,
     };
   }
 }

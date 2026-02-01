@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import { loadConfig } from '../lib/config';
 import { createNotionClient, queryMyTickets } from '../lib/notion';
+import { getPRInfo, parsePRUrl } from '../lib/github';
 
 const STATUS_COLORS: Record<string, (s: string) => string> = {
   // Done / Complete
@@ -57,6 +58,12 @@ function formatPriority(priority: string): string {
   return `${icon} ${priority}`;
 }
 
+function formatComments(count: number): string {
+  if (count === 0) return chalk.green('✓');
+  if (count <= 2) return chalk.yellow(`${count}`);
+  return chalk.red(`${count}`);
+}
+
 export async function statusCommand(): Promise<void> {
   const config = loadConfig();
   const notion = createNotionClient(config);
@@ -79,9 +86,32 @@ export async function statusCommand(): Promise<void> {
   }
 
   if (tickets.length === 0) {
-    console.log(chalk.yellow('No tickets found. Check your config with `eq setup`.'));
-    console.log(chalk.dim('Tip: Use `eq inspect <database-url>` to check property names.'));
+    console.log(chalk.yellow('No tickets found. Check your config with `tix setup`.'));
+    console.log(chalk.dim('Tip: Use `tix inspect <database-url>` to check property names.'));
     return;
+  }
+
+  // Fetch PR info for tickets with GitHub links
+  process.stdout.write(chalk.dim('Checking PRs for unresolved comments...\n'));
+
+  const ticketPRComments: Map<string, number> = new Map();
+  const ticketPRCount: Map<string, number> = new Map();
+
+  for (const ticket of tickets) {
+    const prLinks = ticket.githubLinks.filter((l: string) => parsePRUrl(l));
+    if (prLinks.length === 0) continue;
+
+    ticketPRCount.set(ticket.id, prLinks.length);
+    let totalUnresolved = 0;
+
+    for (const prUrl of prLinks) {
+      const prInfo = await getPRInfo(prUrl);
+      if (prInfo) {
+        totalUnresolved += prInfo.unresolvedComments;
+      }
+    }
+
+    ticketPRComments.set(ticket.id, totalUnresolved);
   }
 
   const table = new Table({
@@ -89,9 +119,11 @@ export async function statusCommand(): Promise<void> {
       chalk.bold('Title'),
       chalk.bold('Status'),
       chalk.bold('Priority'),
+      chalk.bold('PRs'),
+      chalk.bold('Comments'),
       chalk.bold('Updated'),
     ],
-    colWidths: [45, 18, 16, 14],
+    colWidths: [38, 16, 14, 6, 10, 12],
     wordWrap: true,
     style: {
       head: [],
@@ -100,10 +132,21 @@ export async function statusCommand(): Promise<void> {
   });
 
   for (const ticket of tickets) {
+    const prCount = ticketPRCount.get(ticket.id) || 0;
+    const commentCount = ticketPRComments.get(ticket.id);
+    const commentsCell = prCount === 0
+      ? chalk.dim('—')
+      : formatComments(commentCount ?? 0);
+    const prsCell = prCount === 0
+      ? chalk.dim('—')
+      : chalk.cyan(`${prCount}`);
+
     table.push([
-      ticket.title.length > 42 ? ticket.title.slice(0, 39) + '...' : ticket.title,
+      ticket.title.length > 35 ? ticket.title.slice(0, 32) + '...' : ticket.title,
       colorStatus(ticket.status),
       formatPriority(ticket.priority),
+      prsCell,
+      commentsCell,
       ticket.lastUpdated,
     ]);
   }
