@@ -5,7 +5,7 @@ import { EqConfig } from '../types';
 
 export async function setupCommand(): Promise<void> {
   console.log(chalk.bold.cyan('\n🔧 eq setup\n'));
-  console.log('Configure your Equals Money developer environment.\n');
+  console.log('Configure your tix environment.\n');
 
   if (configExists()) {
     const { overwrite } = await inquirer.prompt([
@@ -57,7 +57,7 @@ export async function setupCommand(): Promise<void> {
       type: 'input',
       name: 'githubOrg',
       message: 'Default GitHub org:',
-      default: 'equals-money',
+      default: '',
     },
   ]);
 

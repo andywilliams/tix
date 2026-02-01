@@ -1,10 +1,10 @@
 {
-  "name": "eq-cli",
+  "name": "tix",
   "version": "0.1.0",
-  "description": "Equals Money developer CLI — bridges Notion tickets and GitHub PRs",
+  "description": "Developer CLI — Notion tickets, GitHub PRs, and Bugbot Buster — bridges Notion tickets and GitHub PRs",
   "main": "dist/index.js",
   "bin": {
-    "eq": "dist/index.js"
+    "tix": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["equals-money", "notion", "github", "cli", "developer-tools"],
+  "keywords": ["notion", "github", "cli", "developer-tools"],
   "license": "MIT",
   "dependencies": {
     "@notionhq/client": "^2.2.15",

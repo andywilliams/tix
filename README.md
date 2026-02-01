@@ -1,4 +1,4 @@
-# eq — Equals Money Developer CLI
+# eq — your team Developer CLI
 
 A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, inspect PR status, and run bugbot-buster — all from the terminal.
 
@@ -6,7 +6,7 @@ A developer productivity CLI that bridges **Notion** (ticket tracking) and **Git
 
 ```bash
 # Clone and install
-cd /root/eq-cli
+cd /root/tix
 npm install
 npm run build
 npm link   # makes `eq` available globally
@@ -24,7 +24,7 @@ You'll be prompted for:
 - **Notion API key** — create an integration at https://www.notion.so/my-integrations
 - **Notion database ID** — the database where your team tracks tickets (paste the URL, the ID is extracted automatically)
 - **Your name** — as it appears in Notion's "Assigned to" field
-- **GitHub org** — default org for PR references (e.g. `equals-money`)
+- **GitHub org** — default org for PR references (e.g. `your-org`)
 
 Config is saved to `~/.eqrc.json`.
 
@@ -37,7 +37,7 @@ Config is saved to `~/.eqrc.json`.
 
 ## Commands
 
-### `eq status`
+### `tix status`
 
 Shows your assigned tickets in a color-coded table:
 
@@ -53,7 +53,7 @@ Shows your assigned tickets in a color-coded table:
 └─────────────────────────────────────────────┴──────────────────┴────────────────┴──────────────┘
 ```
 
-### `eq ticket <notion-url-or-id>`
+### `tix ticket <notion-url-or-id>`
 
 Deep-dive into a single ticket. Shows full details and fetches GitHub PR status:
 
@@ -70,7 +70,7 @@ Displays:
 - All GitHub PRs found in the ticket content
 - For each PR: state (open/merged/closed), CI check status, review status
 
-### `eq inspect <notion-url-or-id>`
+### `tix inspect <notion-url-or-id>`
 
 Debug command to inspect a Notion page or database structure. Essential for figuring out property names:
 
@@ -88,13 +88,13 @@ Outputs:
 - Relation and rollup configurations
 - Full JSON dump
 
-### `eq bust <pr>`
+### `tix bust <pr>`
 
 Run bugbot-buster on a GitHub PR:
 
 ```bash
 # With a URL
-eq bust "https://github.com/equals-money/api/pull/42"
+eq bust "https://github.com/your-org/api/pull/42"
 
 # With shorthand (uses configured GitHub org)
 eq bust "api#42"
@@ -124,12 +124,12 @@ Options:
   "notionApiKey": "secret_...",
   "notionDatabaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
   "userName": "Andy",
-  "githubOrg": "equals-money"
+  "githubOrg": "your-org"
 }
 ```
 
 ## Tips
 
-- Use `eq inspect` first to discover your database's property names — they may differ from the defaults
+- Use `tix inspect` first to discover your database's property names — they may differ from the defaults
 - The `status` command filters by name matching, so your `userName` must match how Notion displays your name in the "Assigned to" (or similar) people property
 - PR detection scans page content blocks for GitHub URLs — make sure PRs are linked in your tickets

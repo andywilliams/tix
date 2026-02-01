@@ -11,7 +11,7 @@ const program = new Command();
 
 program
   .name('eq')
-  .description('Equals Money developer CLI — bridges Notion tickets and GitHub PRs')
+  .description('Developer CLI — Notion tickets, GitHub PRs, and Bugbot Buster in one place')
   .version('0.1.0');
 
 program
