@@ -6,6 +6,7 @@ import { statusCommand } from './commands/status';
 import { ticketCommand } from './commands/ticket';
 import { inspectCommand } from './commands/inspect';
 import { bustCommand } from './commands/bust';
+import { workCommand } from './commands/work';
 
 const program = new Command();
 
@@ -72,6 +73,23 @@ program
   .action(async (pr: string, options: any) => {
     try {
       await bustCommand(pr, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('work <ticket>')
+  .description('Implement a ticket with AI — fetches context, creates branch, runs AI, offers PR')
+  .option('--repo <owner/repo>', 'Target repository (skip auto-detection)')
+  .option('--ai <provider>', 'AI provider: claude (default), codex, codex-interactive', 'claude')
+  .option('--branch <name>', 'Custom branch name (skip auto-generation)')
+  .option('--no-pr', 'Skip PR creation prompt')
+  .option('--dry-run', 'Show what would be done without executing')
+  .action(async (ticket: string, options: any) => {
+    try {
+      await workCommand(ticket, options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

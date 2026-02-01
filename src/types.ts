@@ -23,6 +23,17 @@ export interface PRInfo {
   checks: string;      // pass, fail, pending
   reviews: string;     // approved, changes_requested, pending
   author: string;
+  unresolvedComments: number;
+}
+
+export interface TicketSummary {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  lastUpdated: string;
+  url: string;
+  githubLinks: string[];
 }
 
 export interface TicketDetail {
