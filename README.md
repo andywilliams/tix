@@ -1,4 +1,4 @@
-# eq — your team Developer CLI
+# tix — Developer CLI
 
 A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, inspect PR status, and run bugbot-buster — all from the terminal.
 
@@ -9,7 +9,7 @@ A developer productivity CLI that bridges **Notion** (ticket tracking) and **Git
 cd /root/tix
 npm install
 npm run build
-npm link   # makes `eq` available globally
+npm link   # makes `tix` available globally
 ```
 
 ## Setup
@@ -17,7 +17,7 @@ npm link   # makes `eq` available globally
 Run the interactive setup wizard:
 
 ```bash
-eq setup
+tix setup
 ```
 
 You'll be prompted for:
@@ -59,10 +59,10 @@ Deep-dive into a single ticket. Shows full details and fetches GitHub PR status:
 
 ```bash
 # With a Notion URL
-eq ticket "https://www.notion.so/workspace/Fix-auth-token-abc123def456"
+tix ticket "https://www.notion.so/workspace/Fix-auth-token-abc123def456"
 
 # With just the ID
-eq ticket abc123def456
+tix ticket abc123def456
 ```
 
 Displays:
@@ -76,10 +76,10 @@ Debug command to inspect a Notion page or database structure. Essential for figu
 
 ```bash
 # Inspect your ticket database
-eq inspect "https://www.notion.so/workspace/abc123def456?v=..."
+tix inspect "https://www.notion.so/workspace/abc123def456?v=..."
 
 # Inspect a specific page
-eq inspect "https://www.notion.so/workspace/Some-Page-abc123def456"
+tix inspect "https://www.notion.so/workspace/Some-Page-abc123def456"
 ```
 
 Outputs:
@@ -94,13 +94,13 @@ Run bugbot-buster on a GitHub PR:
 
 ```bash
 # With a URL
-eq bust "https://github.com/your-org/api/pull/42"
+tix bust "https://github.com/your-org/api/pull/42"
 
 # With shorthand (uses configured GitHub org)
-eq bust "api#42"
+tix bust "api#42"
 
 # With options
-eq bust "api#42" --dry-run --verbose --ai claude
+tix bust "api#42" --dry-run --verbose --ai claude
 ```
 
 Options:
