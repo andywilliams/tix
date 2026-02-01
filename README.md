@@ -1,12 +1,12 @@
 # tix — Developer CLI
 
-A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, inspect PR status, and run bugbot-buster — all from the terminal.
+A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, check PR status, implement tickets with AI, and run bugbot-buster — all from the terminal.
 
 ## Installation
 
 ```bash
-# Clone and install
-cd /root/tix
+git clone git@github.com:andywilliams/tix.git
+cd tix
 npm install
 npm run build
 npm link   # makes `tix` available globally
@@ -39,19 +39,22 @@ Config is saved to `~/.eqrc.json`.
 
 ### `tix status`
 
-Shows your assigned tickets in a color-coded table:
+Shows your assigned tickets in a color-coded table with PR and comment info:
 
 ```
 📋 Tickets for Andy
 
-┌─────────────────────────────────────────────┬──────────────────┬────────────────┬──────────────┐
-│ Title                                       │ Status           │ Priority       │ Updated      │
-├─────────────────────────────────────────────┼──────────────────┼────────────────┼──────────────┤
-│ Fix auth token refresh                      │ In Progress      │ 🟠 High        │ 1/15/2025    │
-│ Add webhook retry logic                     │ To Do            │ 🟡 Medium      │ 1/14/2025    │
-│ Update API docs                             │ Done             │ 🟢 Low         │ 1/13/2025    │
-└─────────────────────────────────────────────┴──────────────────┴────────────────┴──────────────┘
+┌──────────────────────────────────────┬────────────────┬──────────────┬──────┬──────────┬────────────┐
+│ Title                                │ Status         │ Priority     │ PRs  │ Comments │ Updated    │
+├──────────────────────────────────────┼────────────────┼──────────────┼──────┼──────────┼────────────┤
+│ Fix auth token refresh               │ In Progress    │ 🟠 High      │ 2    │ 3        │ 1/15/2025  │
+│ Add webhook retry logic              │ To Do          │ 🟡 Medium    │ —    │ —        │ 1/14/2025  │
+│ Update API docs                      │ Done           │ 🟢 Low       │ 1    │ ✓        │ 1/13/2025  │
+└──────────────────────────────────────┴────────────────┴──────────────┴──────┴──────────┴────────────┘
 ```
+
+- **PRs** — number of linked GitHub PRs found in the ticket
+- **Comments** — total unresolved review comments across linked PRs (✓ = all resolved)
 
 ### `tix ticket <notion-url-or-id>`
 
@@ -70,6 +73,50 @@ Displays:
 - All GitHub PRs found in the ticket content
 - For each PR: state (open/merged/closed), CI check status, review status
 
+### `tix work <ticket-url-or-id>`
+
+Implement a ticket using AI. Fetches the ticket from Notion, sets up a branch, and launches an AI coding assistant with the full ticket context:
+
+```bash
+# Implement a ticket with Claude (default)
+tix work "https://www.notion.so/workspace/Fix-auth-token-abc123def456"
+
+# Use Codex in full-auto mode
+tix work "https://notion.so/..." --ai codex
+
+# Use Codex interactively
+tix work "https://notion.so/..." --ai codex-interactive
+
+# Specify the target repo (skip auto-detection)
+tix work "https://notion.so/..." --repo your-org/api
+
+# Custom branch name
+tix work "https://notion.so/..." --branch fix/auth-token
+
+# Skip PR creation prompt
+tix work "https://notion.so/..." --no-pr
+
+# Preview without making changes
+tix work "https://notion.so/..." --dry-run
+```
+
+**Flow:**
+1. Fetches ticket details from Notion (title, description, acceptance criteria)
+2. Scans ticket for GitHub links to detect the target repo
+3. If multiple repos or none found, prompts you to choose
+4. Creates a branch (`tix/<ticket-slug>`) from latest main
+5. Launches AI with the ticket context as the task
+6. When done, offers to create a PR linking back to the ticket
+
+**Options:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--repo <owner/repo>` | Target repository | auto-detect |
+| `--ai <provider>` | AI provider: `claude`, `codex`, `codex-interactive` | `claude` |
+| `--branch <name>` | Custom branch name | `tix/<ticket-slug>` |
+| `--no-pr` | Skip PR creation prompt | `false` |
+| `--dry-run` | Preview without executing | `false` |
+
 ### `tix inspect <notion-url-or-id>`
 
 Debug command to inspect a Notion page or database structure. Essential for figuring out property names:
@@ -84,13 +131,13 @@ tix inspect "https://www.notion.so/workspace/Some-Page-abc123def456"
 
 Outputs:
 - Property names and types
-- Select/status options with colors
+- Select/status options with colours
 - Relation and rollup configurations
 - Full JSON dump
 
 ### `tix bust <pr>`
 
-Run bugbot-buster on a GitHub PR:
+Run [bugbot-buster](https://github.com/andywilliams/bugbot-buster) on a GitHub PR — automatically fix unresolved review comments using AI:
 
 ```bash
 # With a URL
@@ -103,17 +150,20 @@ tix bust "api#42"
 tix bust "api#42" --dry-run --verbose --ai claude
 ```
 
-Options:
-- `--dry-run` — preview without making changes
-- `--verbose` — detailed output
-- `--ai <engine>` — choose AI engine: `claude` or `codex` (default: `codex`)
-- `--authors <filter>` — author filter (default: `cursor`)
+**Options:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dry-run` | Preview without making changes | `false` |
+| `--verbose` | Detailed output | `false` |
+| `--ai <engine>` | AI engine: `codex` or `claude` | `codex` |
+| `--authors <filter>` | Only fix comments from these authors | `cursor` |
 
 ## Prerequisites
 
 - **Node.js** ≥ 18
 - **GitHub CLI** (`gh`) — installed and authenticated (`gh auth login`)
 - **Notion integration** — with access to your team's database
+- **Claude Code** or **Codex CLI** — for `tix work` and `tix bust`
 
 ## Config File
 
@@ -133,3 +183,4 @@ Options:
 - Use `tix inspect` first to discover your database's property names — they may differ from the defaults
 - The `status` command filters by name matching, so your `userName` must match how Notion displays your name in the "Assigned to" (or similar) people property
 - PR detection scans page content blocks for GitHub URLs — make sure PRs are linked in your tickets
+- `tix work` defaults to Claude for interactive sessions where you can guide the AI — use `--ai codex` for fully autonomous implementation
