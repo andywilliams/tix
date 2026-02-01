@@ -1,0 +1,29 @@
+{
+  "name": "eq-cli",
+  "version": "0.1.0",
+  "description": "Equals Money developer CLI — bridges Notion tickets and GitHub PRs",
+  "main": "dist/index.js",
+  "bin": {
+    "eq": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["equals-money", "notion", "github", "cli", "developer-tools"],
+  "license": "MIT",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "inquirer": "^8.2.6"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}
