@@ -158,6 +158,33 @@ tix bust "api#42" --dry-run --verbose --ai claude
 | `--ai <engine>` | AI engine: `codex` or `claude` | `codex` |
 | `--authors <filter>` | Only fix comments from these authors | `cursor` |
 
+### `tix sync`
+
+Sync tickets from Notion via **Claude Code MCP** — no Notion API key required. This is ideal when your team can't distribute a shared API key, but developers have Notion MCP set up in Claude Code or Cursor.
+
+```bash
+tix sync
+```
+
+**How it works:**
+1. Claude Code connects to Notion via the MCP server configured in `.mcp.json`
+2. It queries your ticket database and writes each ticket to `.tix/tickets/<id>.md`
+3. It also writes `.tix/index.json` as a manifest
+4. Other tix commands (`status`, `ticket`, `work`) automatically read from local files when no API key is configured
+
+**Setup:**
+1. Copy `.mcp.json` from the project root (already included in the repo)
+2. Replace `YOUR_NOTION_TOKEN` with your personal Notion integration token
+3. Make sure [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) is installed: `npm install -g @anthropic-ai/claude-code`
+4. Run `tix sync`
+
+**When no API key is configured**, all commands fall back to the local `.tix/` cache and show:
+```
+📁 Reading from local cache (last synced: 1/15/2025, 3:42:00 PM). Run `tix sync` to refresh.
+```
+
+> **Note:** `tix sync` requires the Claude Code CLI. If it's not available, tix will print instructions for running the sync manually using the `/sync-tickets` slash command in Claude Code or Cursor.
+
 ## Prerequisites
 
 - **Node.js** ≥ 18
@@ -177,6 +204,18 @@ tix bust "api#42" --dry-run --verbose --ai claude
   "githubOrg": "your-org"
 }
 ```
+
+> **`notionApiKey` is optional.** If omitted, tix operates in "local mode" — reading from `.tix/` files synced via `tix sync`. Run `tix setup` and leave the API key blank to use this mode.
+
+### MCP-Based Sync (No API Key)
+
+If your team can't distribute a Notion API key, each developer can use their own Notion integration via Claude Code MCP:
+
+1. **Create a Notion integration** at https://www.notion.so/my-integrations (each dev creates their own)
+2. **Share the database** with your integration
+3. **Edit `.mcp.json`** in the project root — replace `YOUR_NOTION_TOKEN` with your token
+4. **Run `tix sync`** to pull tickets into `.tix/tickets/`
+5. All tix commands work normally, reading from the local cache
 
 ## Tips
 

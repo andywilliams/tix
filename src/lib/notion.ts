@@ -1,7 +1,16 @@
 import { Client } from '@notionhq/client';
+import * as fs from 'fs';
+import * as path from 'path';
+import matter = require('gray-matter');
 import { EqConfig, TicketSummary, TicketDetail } from '../types';
+import { findTixDir } from './config';
 
 export function createNotionClient(config: EqConfig): Client {
+  if (!config.notionApiKey) {
+    throw new Error(
+      'No Notion API key configured. Use `tix sync` to sync tickets via MCP, or run `tix setup` to add an API key.'
+    );
+  }
   return new Client({ auth: config.notionApiKey });
 }
 
@@ -304,5 +313,140 @@ export async function inspectPage(notion: Client, pageId: string): Promise<any> 
     } catch (err: any) {
       throw new Error(`Could not retrieve as page or database: ${err.message}`);
     }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Local file readers — for MCP-synced tickets in .tix/
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Load all tickets from the local .tix/ cache.
+ * Reads .tix/index.json and falls back to scanning .tix/tickets/*.md.
+ */
+export function loadLocalTickets(): TicketSummary[] {
+  const tixDir = findTixDir();
+  if (!tixDir) return [];
+
+  // Try index.json first for speed
+  const indexPath = path.join(tixDir, 'index.json');
+  if (fs.existsSync(indexPath)) {
+    try {
+      const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+      if (Array.isArray(index.tickets)) {
+        return index.tickets.map((t: any) => ({
+          id: t.id || '',
+          title: t.title || '(untitled)',
+          status: t.status || '—',
+          priority: t.priority || '—',
+          lastUpdated: t.lastUpdated
+            ? new Date(t.lastUpdated).toLocaleDateString()
+            : '—',
+          url: t.url || '',
+          githubLinks: Array.isArray(t.githubLinks) ? t.githubLinks : [],
+        }));
+      }
+    } catch {
+      // Fall through to file scanning
+    }
+  }
+
+  // Fallback: scan ticket files
+  const ticketsDir = path.join(tixDir, 'tickets');
+  if (!fs.existsSync(ticketsDir)) return [];
+
+  const files = fs.readdirSync(ticketsDir).filter(f => f.endsWith('.md'));
+  const tickets: TicketSummary[] = [];
+
+  for (const file of files) {
+    try {
+      const raw = fs.readFileSync(path.join(ticketsDir, file), 'utf-8');
+      const { data } = matter(raw);
+
+      tickets.push({
+        id: data.id || path.basename(file, '.md'),
+        title: data.title || '(untitled)',
+        status: data.status || '—',
+        priority: data.priority || '—',
+        lastUpdated: data.lastUpdated
+          ? new Date(data.lastUpdated).toLocaleDateString()
+          : '—',
+        url: data.url || '',
+        githubLinks: Array.isArray(data.githubLinks) ? data.githubLinks : [],
+      });
+    } catch {
+      // Skip malformed files
+    }
+  }
+
+  return tickets;
+}
+
+/**
+ * Load full detail for a single ticket from local .tix/ cache.
+ */
+export function getLocalTicketDetail(id: string): TicketDetail | null {
+  const tixDir = findTixDir();
+  if (!tixDir) return null;
+
+  const ticketsDir = path.join(tixDir, 'tickets');
+  if (!fs.existsSync(ticketsDir)) return null;
+
+  // Try exact filename match (with and without dashes)
+  const cleanId = id.replace(/-/g, '');
+  const candidates = [
+    `${id}.md`,
+    `${cleanId}.md`,
+  ];
+
+  let filePath: string | null = null;
+  for (const candidate of candidates) {
+    const full = path.join(ticketsDir, candidate);
+    if (fs.existsSync(full)) {
+      filePath = full;
+      break;
+    }
+  }
+
+  // If no exact match, scan all files for matching frontmatter ID
+  if (!filePath) {
+    const files = fs.readdirSync(ticketsDir).filter(f => f.endsWith('.md'));
+    for (const file of files) {
+      try {
+        const raw = fs.readFileSync(path.join(ticketsDir, file), 'utf-8');
+        const { data } = matter(raw);
+        const fileId = (data.id || '').replace(/-/g, '');
+        if (fileId === cleanId) {
+          filePath = path.join(ticketsDir, file);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  if (!filePath) return null;
+
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const { data, content } = matter(raw);
+
+    return {
+      id: data.id || id,
+      title: data.title || '(untitled)',
+      status: data.status || '—',
+      priority: data.priority || '—',
+      assignee: data.assignee || '—',
+      lastUpdated: data.lastUpdated
+        ? new Date(data.lastUpdated).toLocaleString()
+        : '—',
+      url: data.url || '',
+      properties: data as Record<string, any>,
+      githubLinks: Array.isArray(data.githubLinks) ? data.githubLinks : [],
+      prs: [], // filled in by the caller using github helpers
+    };
+  } catch {
+    return null;
   }
 }

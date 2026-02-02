@@ -3,8 +3,8 @@ import inquirer from 'inquirer';
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadConfig, extractNotionId } from '../lib/config';
-import { createNotionClient, getTicketDetail } from '../lib/notion';
+import { loadConfig, extractNotionId, isLocalMode, getLastSyncedDate } from '../lib/config';
+import { createNotionClient, getTicketDetail, getLocalTicketDetail } from '../lib/notion';
 import { checkGhCli } from '../lib/github';
 
 interface WorkOptions {
@@ -128,7 +128,6 @@ function branchExists(repoDir: string, branchName: string): boolean {
 
 export async function workCommand(ticketArg: string, options: WorkOptions): Promise<void> {
   const config = loadConfig();
-  const notion = createNotionClient(config);
   const isDryRun = !!options.dryRun;
 
   // ── Step 1: Fetch the ticket ──────────────────────────────────
@@ -141,18 +140,40 @@ export async function workCommand(ticketArg: string, options: WorkOptions): Prom
   }
 
   console.log(chalk.bold.cyan('\n🔧 tix work — Implement a ticket with AI\n'));
-  console.log(chalk.dim('Fetching ticket from Notion...'));
-
+  // Fetch ticket — use local cache if no API key
   let detail;
-  try {
-    detail = await getTicketDetail(notion, pageId);
-  } catch (err: any) {
-    console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
-    process.exit(1);
+  let notion: any = null;
+
+  if (!config.notionApiKey) {
+    if (!isLocalMode()) {
+      console.error(chalk.red('No Notion API key configured and no local ticket cache found.'));
+      console.log(chalk.dim('Run `tix sync` to sync tickets via Claude Code MCP, or `tix setup` to add an API key.'));
+      process.exit(1);
+    }
+
+    const lastSynced = getLastSyncedDate();
+    const syncDate = lastSynced ? new Date(lastSynced).toLocaleString() : 'unknown';
+    console.log(chalk.dim(`📁 Reading from local cache (last synced: ${syncDate}). Run \`tix sync\` to refresh.\n`));
+
+    detail = getLocalTicketDetail(pageId);
+    if (!detail) {
+      console.error(chalk.red(`Ticket ${pageId} not found in local cache.`));
+      console.log(chalk.dim('Run `tix sync` to refresh the local cache.'));
+      process.exit(1);
+    }
+  } else {
+    console.log(chalk.dim('Fetching ticket from Notion...'));
+    notion = createNotionClient(config);
+    try {
+      detail = await getTicketDetail(notion, pageId);
+    } catch (err: any) {
+      console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
+      process.exit(1);
+    }
   }
 
   // ── Step 2: Extract ticket info ───────────────────────────────
-  const bodyText = await getPageBodyText(notion, pageId);
+  const bodyText = notion ? await getPageBodyText(notion, pageId) : '';
 
   console.log(chalk.bold.white(`\n📋 ${detail.title}`));
   console.log(chalk.dim('─'.repeat(60)));

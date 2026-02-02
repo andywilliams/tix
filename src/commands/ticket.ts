@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig, extractNotionId } from '../lib/config';
-import { createNotionClient, getTicketDetail } from '../lib/notion';
+import { loadConfig, extractNotionId, isLocalMode, getLastSyncedDate } from '../lib/config';
+import { createNotionClient, getTicketDetail, getLocalTicketDetail } from '../lib/notion';
 import { getPRInfo, formatPRRef, checkGhCli } from '../lib/github';
 
 function stateIcon(state: string): string {
@@ -34,7 +34,6 @@ function reviewIcon(reviews: string): string {
 
 export async function ticketCommand(notionUrlOrId: string): Promise<void> {
   const config = loadConfig();
-  const notion = createNotionClient(config);
 
   let pageId: string;
   try {
@@ -46,13 +45,33 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
 
   console.log(chalk.bold.cyan('\n🎫 Ticket Details\n'));
 
-  // Fetch ticket
+  // Fetch ticket — use local cache if no API key
   let detail;
-  try {
-    detail = await getTicketDetail(notion, pageId);
-  } catch (err: any) {
-    console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
-    process.exit(1);
+  if (!config.notionApiKey) {
+    if (!isLocalMode()) {
+      console.error(chalk.red('No Notion API key configured and no local ticket cache found.'));
+      console.log(chalk.dim('Run `tix sync` to sync tickets via Claude Code MCP, or `tix setup` to add an API key.'));
+      process.exit(1);
+    }
+
+    detail = getLocalTicketDetail(pageId);
+    if (!detail) {
+      console.error(chalk.red(`Ticket ${pageId} not found in local cache.`));
+      console.log(chalk.dim('Run `tix sync` to refresh the local cache.'));
+      process.exit(1);
+    }
+
+    const lastSynced = getLastSyncedDate();
+    const syncDate = lastSynced ? new Date(lastSynced).toLocaleString() : 'unknown';
+    console.log(chalk.dim(`📁 Reading from local cache (last synced: ${syncDate}). Run \`tix sync\` to refresh.\n`));
+  } else {
+    const notion = createNotionClient(config);
+    try {
+      detail = await getTicketDetail(notion, pageId);
+    } catch (err: any) {
+      console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
+      process.exit(1);
+    }
   }
 
   // Header

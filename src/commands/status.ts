@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig } from '../lib/config';
-import { createNotionClient, queryMyTickets } from '../lib/notion';
+import { loadConfig, isLocalMode, getLastSyncedDate } from '../lib/config';
+import { createNotionClient, queryMyTickets, loadLocalTickets } from '../lib/notion';
 import { getPRInfo, parsePRUrl } from '../lib/github';
 
 const STATUS_COLORS: Record<string, (s: string) => string> = {
@@ -66,23 +66,51 @@ function formatComments(count: number): string {
 
 export async function statusCommand(): Promise<void> {
   const config = loadConfig();
-  const notion = createNotionClient(config);
 
   console.log(chalk.bold.cyan(`\n📋 Tickets for ${config.userName}\n`));
 
-  const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  let i = 0;
-  const interval = setInterval(() => {
-    process.stdout.write(`\r${spinner[i % spinner.length]} Fetching from Notion...`);
-    i++;
-  }, 80);
-
   let tickets;
-  try {
-    tickets = await queryMyTickets(notion, config);
-  } finally {
-    clearInterval(interval);
-    process.stdout.write('\r' + ' '.repeat(40) + '\r');
+  let usingLocalCache = false;
+
+  if (!config.notionApiKey) {
+    // No API key — use local cache
+    if (!isLocalMode()) {
+      console.log(chalk.yellow('No Notion API key configured and no local ticket cache found.'));
+      console.log(chalk.dim('Run `tix sync` to sync tickets via Claude Code MCP, or `tix setup` to add an API key.\n'));
+      return;
+    }
+
+    tickets = loadLocalTickets();
+    usingLocalCache = true;
+
+    // Filter by userName
+    const userName = config.userName.toLowerCase();
+    const allTickets = tickets;
+    tickets = tickets.filter(t => {
+      // If no assignee info, include it
+      if (!t.githubLinks) return true;
+      return true; // local tickets don't have assignee in TicketSummary — show all
+    });
+
+    const lastSynced = getLastSyncedDate();
+    const syncDate = lastSynced ? new Date(lastSynced).toLocaleString() : 'unknown';
+    console.log(chalk.dim(`📁 Reading from local cache (last synced: ${syncDate}). Run \`tix sync\` to refresh.\n`));
+  } else {
+    const notion = createNotionClient(config);
+
+    const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let i = 0;
+    const interval = setInterval(() => {
+      process.stdout.write(`\r${spinner[i % spinner.length]} Fetching from Notion...`);
+      i++;
+    }, 80);
+
+    try {
+      tickets = await queryMyTickets(notion, config);
+    } finally {
+      clearInterval(interval);
+      process.stdout.write('\r' + ' '.repeat(40) + '\r');
+    }
   }
 
   if (tickets.length === 0) {

@@ -8,8 +8,16 @@ export function configExists(): boolean {
   return fs.existsSync(CONFIG_PATH);
 }
 
+/**
+ * Load config with full validation — requires notionApiKey.
+ * Throws if config is missing or incomplete (unless local mode is available).
+ */
 export function loadConfig(): EqConfig {
   if (!fs.existsSync(CONFIG_PATH)) {
+    // Check if local mode is available before failing
+    if (isLocalMode()) {
+      return loadConfigPermissive()!;
+    }
     throw new Error(
       'Config not found. Run `eq setup` first to configure your environment.'
     );
@@ -19,16 +27,91 @@ export function loadConfig(): EqConfig {
     const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
     const config = JSON.parse(raw) as EqConfig;
 
-    if (!config.notionApiKey || !config.notionDatabaseId || !config.userName) {
+    // If no API key, allow it if local mode is available
+    if (!config.notionApiKey && !isLocalMode()) {
+      throw new Error(
+        'No Notion API key configured. Run `eq setup` to add one, or `tix sync` to use MCP-based sync.'
+      );
+    }
+
+    if (!config.notionDatabaseId || !config.userName) {
       throw new Error('Config is incomplete. Run `eq setup` to reconfigure.');
     }
 
     return config;
   } catch (err: any) {
-    if (err.message.includes('Config is incomplete') || err.message.includes('Config not found')) {
+    if (err.message.includes('Config is incomplete') || err.message.includes('Config not found') || err.message.includes('No Notion API key')) {
       throw err;
     }
     throw new Error(`Failed to read config at ${CONFIG_PATH}: ${err.message}`);
+  }
+}
+
+/**
+ * Load config without requiring notionApiKey.
+ * Returns null if config file doesn't exist.
+ */
+export function loadConfigPermissive(): EqConfig | null {
+  if (!fs.existsSync(CONFIG_PATH)) {
+    return null;
+  }
+
+  try {
+    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+    return JSON.parse(raw) as EqConfig;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if local mode is available — .tix/tickets/ exists with files.
+ * This allows tix to work without a Notion API key by reading
+ * locally synced ticket files.
+ */
+export function isLocalMode(): boolean {
+  const tixDir = findTixDir();
+  if (!tixDir) return false;
+
+  const ticketsDir = path.join(tixDir, 'tickets');
+  if (!fs.existsSync(ticketsDir)) return false;
+
+  try {
+    const files = fs.readdirSync(ticketsDir).filter(f => f.endsWith('.md'));
+    return files.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Find the .tix directory by walking up from cwd.
+ */
+export function findTixDir(): string | null {
+  let dir = process.cwd();
+  while (dir !== '/') {
+    const tixPath = path.join(dir, '.tix');
+    if (fs.existsSync(tixPath)) return tixPath;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+/**
+ * Get the last synced date from .tix/index.json.
+ */
+export function getLastSyncedDate(): string | null {
+  const tixDir = findTixDir();
+  if (!tixDir) return null;
+
+  const indexPath = path.join(tixDir, 'index.json');
+  if (!fs.existsSync(indexPath)) return null;
+
+  try {
+    const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+    return index.lastSynced || null;
+  } catch {
+    return null;
   }
 }
 

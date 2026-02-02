@@ -26,12 +26,14 @@ export async function setupCommand(): Promise<void> {
     {
       type: 'password',
       name: 'notionApiKey',
-      message: 'Notion API key (integration token):',
+      message: 'Notion API key (integration token, or leave blank for MCP sync):',
       mask: '*',
-      validate: (input: string) =>
-        input.startsWith('secret_') || input.startsWith('ntn_')
+      validate: (input: string) => {
+        if (!input || input.trim() === '') return true; // Allow empty for MCP-based sync
+        return input.startsWith('secret_') || input.startsWith('ntn_')
           ? true
-          : 'Notion API keys start with "secret_" or "ntn_"',
+          : 'Notion API keys start with "secret_" or "ntn_"';
+      },
     },
     {
       type: 'input',
@@ -61,8 +63,10 @@ export async function setupCommand(): Promise<void> {
     },
   ]);
 
+  const apiKey = answers.notionApiKey?.trim() || undefined;
+
   const config: EqConfig = {
-    notionApiKey: answers.notionApiKey.trim(),
+    ...(apiKey ? { notionApiKey: apiKey } : {}),
     notionDatabaseId: extractNotionId(answers.notionDatabaseId),
     userName: answers.userName.trim(),
     githubOrg: answers.githubOrg.trim(),
@@ -71,9 +75,16 @@ export async function setupCommand(): Promise<void> {
   saveConfig(config);
 
   console.log(chalk.green(`\n✅ Config saved to ${getConfigPath()}`));
+
+  if (!apiKey) {
+    console.log(chalk.yellow('\nℹ No API key set — using MCP-based sync mode.'));
+    console.log(chalk.dim('  Run `tix sync` to sync tickets via Claude Code MCP.\n'));
+  }
+
   console.log(chalk.dim('\nYou can now run:'));
-  console.log(chalk.dim('  eq status    — view your tickets'));
-  console.log(chalk.dim('  eq ticket    — deep-dive a ticket'));
-  console.log(chalk.dim('  eq inspect   — inspect Notion structure'));
-  console.log(chalk.dim('  eq bust      — run bugbot-buster on a PR\n'));
+  console.log(chalk.dim('  tix status   — view your tickets'));
+  console.log(chalk.dim('  tix ticket   — deep-dive a ticket'));
+  console.log(chalk.dim('  tix sync     — sync tickets via Claude Code MCP'));
+  console.log(chalk.dim('  tix inspect  — inspect Notion structure'));
+  console.log(chalk.dim('  tix bust     — run bugbot-buster on a PR\n'));
 }

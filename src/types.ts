@@ -1,5 +1,5 @@
 export interface EqConfig {
-  notionApiKey: string;
+  notionApiKey?: string;
   notionDatabaseId: string;
   userName: string;
   githubOrg: string;

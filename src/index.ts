@@ -7,6 +7,7 @@ import { ticketCommand } from './commands/ticket';
 import { inspectCommand } from './commands/inspect';
 import { bustCommand } from './commands/bust';
 import { workCommand } from './commands/work';
+import { syncCommand } from './commands/sync';
 
 const program = new Command();
 
@@ -73,6 +74,18 @@ program
   .action(async (pr: string, options: any) => {
     try {
       await bustCommand(pr, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync')
+  .description('Sync tickets from Notion via Claude Code MCP (no API key needed)')
+  .action(async () => {
+    try {
+      await syncCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
