@@ -141,12 +141,13 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
 
     const table = new Table({
       head: [
+        chalk.bold('ID'),
         chalk.bold('Title'),
         chalk.bold('Status'),
         chalk.bold('Priority'),
         chalk.bold('Updated'),
       ],
-      colWidths: [42, 16, 14, 12],
+      colWidths: [12, 32, 16, 14, 12],
       wordWrap: true,
       style: {
         head: [],
@@ -156,7 +157,8 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
 
     for (const ticket of tickets) {
       table.push([
-        ticket.title.length > 39 ? ticket.title.slice(0, 36) + '...' : ticket.title,
+        ticket.ticketNumber || '—',
+        ticket.title.length > 29 ? ticket.title.slice(0, 26) + '...' : ticket.title,
         colorStatus(ticket.status),
         formatPriority(ticket.priority),
         ticket.lastUpdated,
@@ -226,6 +228,7 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
 
   const table = new Table({
     head: [
+      chalk.bold('ID'),
       chalk.bold('Title'),
       chalk.bold('Status'),
       chalk.bold('Priority'),
@@ -233,7 +236,7 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
       chalk.bold('Comments'),
       chalk.bold('Updated'),
     ],
-    colWidths: [38, 16, 14, 6, 10, 12],
+    colWidths: [12, 28, 16, 14, 6, 10, 12],
     wordWrap: true,
     style: {
       head: [],
@@ -252,7 +255,8 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
       : chalk.cyan(`${prCount}`);
 
     table.push([
-      ticket.title.length > 35 ? ticket.title.slice(0, 32) + '...' : ticket.title,
+      ticket.ticketNumber || '—',
+      ticket.title.length > 25 ? ticket.title.slice(0, 22) + '...' : ticket.title,
       colorStatus(ticket.status),
       formatPriority(ticket.priority),
       prsCell,
