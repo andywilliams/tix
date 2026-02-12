@@ -1,11 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { TicketSummary, TicketDetail } from '../types';
+import type { TicketSummary, TicketDetail, CachedPR } from '../types';
 
 const TIX_DIR = path.join(os.homedir(), '.tix');
 const TICKETS_DIR = path.join(TIX_DIR, 'tickets');
 const SUMMARY_FILE = path.join(TICKETS_DIR, '_summary.json');
+const PRS_FILE = path.join(TIX_DIR, '_prs.json');
 
 function ensureTicketsDir(): void {
   if (!fs.existsSync(TICKETS_DIR)) {
@@ -61,6 +62,33 @@ export function findTicketByIdOrUrl(idOrUrl: string, tickets: TicketSummary[]): 
     t.url.toLowerCase().includes(lower) ||
     t.id.toLowerCase().includes(lower.replace(/-/g, ''))
   );
+}
+
+export function saveCachedPRs(prs: CachedPR[]): void {
+  ensureTicketsDir();
+  fs.writeFileSync(PRS_FILE, JSON.stringify(prs, null, 2) + '\n');
+}
+
+export function loadCachedPRs(): CachedPR[] {
+  if (!fs.existsSync(PRS_FILE)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(PRS_FILE, 'utf-8')) as CachedPR[];
+  } catch {
+    return [];
+  }
+}
+
+export function hasCachedPRs(): boolean {
+  return fs.existsSync(PRS_FILE);
+}
+
+export function getPRsSyncTimestamp(): Date | null {
+  if (!fs.existsSync(PRS_FILE)) return null;
+  try {
+    return fs.statSync(PRS_FILE).mtime;
+  } catch {
+    return null;
+  }
 }
 
 export function getSyncTimestamp(): Date | null {

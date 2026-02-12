@@ -192,31 +192,19 @@ program
   .description('Open a GitHub PR in the browser by number')
   .action(async (prNumber: string) => {
     const { execSync } = await import('child_process');
-    const { loadConfig } = await import('./lib/config');
-    const config = loadConfig();
+    const { loadCachedPRs } = await import('./lib/ticket-store');
     const num = parseInt(prNumber, 10);
     if (isNaN(num)) {
       console.error(`Invalid PR number: ${prNumber}`);
       process.exit(1);
     }
-    try {
-      const username = execSync('gh api user --jq .login', { stdio: 'pipe', encoding: 'utf-8' }).trim();
-      const ownerFlag = config.githubOrg ? `--owner "${config.githubOrg}"` : '';
-      const result = execSync(
-        `gh search prs --author "${username}" --state open ${ownerFlag} --json number,url --limit 100`,
-        { stdio: 'pipe', encoding: 'utf-8' }
-      );
-      const prs = JSON.parse(result) as Array<{ number: number; url: string }>;
-      const match = prs.find(pr => pr.number === num);
-      if (!match) {
-        console.error(`No open PR #${num} found in your PRs.`);
-        process.exit(1);
-      }
-      execSync(`open "${match.url}"`, { stdio: 'inherit' });
-    } catch (err: any) {
-      console.error(`Failed to find PR: ${err.message}`);
+    const prs = loadCachedPRs();
+    const match = prs.find(pr => pr.number === num);
+    if (!match) {
+      console.error(`PR #${num} not found in cache. Run \`tix sync-gh\` first.`);
       process.exit(1);
     }
+    execSync(`open "${match.url}"`, { stdio: 'inherit' });
   });
 
 // Catch-all: treat unknown commands that look like ticket IDs as `tix ticket <id>`
