@@ -142,6 +142,16 @@ tix open tn-4266
 
 Looks up the ticket in your local cache and opens the Notion URL. Case-insensitive — `TN-4266`, `tn-4266`, etc. all work.
 
+### `tix open-pr <number>`
+
+Open a GitHub PR in the browser by number:
+
+```bash
+tix open-pr 1516
+```
+
+Searches your open PRs (scoped to your GitHub org) and opens the first match. Useful when you see a PR number in `tix prs` and want to jump straight to it.
+
 ### `tix ticket <notion-url-or-id>`
 
 Deep-dive into a single ticket. Shows full details and fetches GitHub PR status:
