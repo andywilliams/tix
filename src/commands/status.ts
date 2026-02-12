@@ -140,30 +140,12 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
     const { filtered: tickets, hiddenCount } = filterCompletedTickets(allTickets, period);
 
     // Use cached githubLinks (populated by `tix sync-gh`)
-    const ticketPRComments: Map<string, number> = new Map();
     const ticketPRCount: Map<string, number> = new Map();
 
-    const ticketsWithPRs = tickets.filter(t => {
-      const prLinks = (t.githubLinks || []).filter((l: string) => parsePRUrl(l));
-      return prLinks.length > 0;
-    });
-
-    if (ticketsWithPRs.length > 0) {
-      process.stdout.write(chalk.dim('Checking PRs for unresolved comments...\n'));
-
-      for (const ticket of ticketsWithPRs) {
-        const prLinks = ticket.githubLinks.filter((l: string) => parsePRUrl(l));
+    for (const ticket of tickets) {
+      const prLinks = (ticket.githubLinks || []).filter((l: string) => parsePRUrl(l));
+      if (prLinks.length > 0) {
         ticketPRCount.set(ticket.id, prLinks.length);
-        let totalUnresolved = 0;
-
-        for (const prUrl of prLinks) {
-          const prInfo = await getPRInfo(prUrl);
-          if (prInfo) {
-            totalUnresolved += prInfo.unresolvedComments;
-          }
-        }
-
-        ticketPRComments.set(ticket.id, totalUnresolved);
       }
     }
 
@@ -175,10 +157,10 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
         chalk.bold('Title'),
         chalk.bold('Status'),
         chalk.bold('Priority'),
-        ...(hasPRData ? [chalk.bold('PRs'), chalk.bold('Comments')] : []),
+        ...(hasPRData ? [chalk.bold('PRs')] : []),
         chalk.bold('Updated'),
       ],
-      colWidths: hasPRData ? [12, 28, 16, 14, 6, 10, 12] : [12, 32, 16, 14, 12],
+      colWidths: hasPRData ? [12, 30, 16, 14, 6, 12] : [12, 34, 16, 14, 12],
       wordWrap: true,
       style: {
         head: [],
@@ -188,9 +170,8 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
 
     for (const ticket of tickets) {
       const prCount = ticketPRCount.get(ticket.id) || 0;
-      const commentCount = ticketPRComments.get(ticket.id);
-      const titleMax = hasPRData ? 25 : 29;
-      const titleTrunc = hasPRData ? 22 : 26;
+      const titleMax = hasPRData ? 27 : 31;
+      const titleTrunc = hasPRData ? 24 : 28;
 
       const row = [
         ticket.ticketNumber || '—',
@@ -200,10 +181,7 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
       ];
 
       if (hasPRData) {
-        row.push(
-          prCount === 0 ? chalk.dim('—') : chalk.cyan(`${prCount}`),
-          prCount === 0 ? chalk.dim('—') : formatComments(commentCount ?? 0),
-        );
+        row.push(prCount === 0 ? chalk.dim('—') : chalk.cyan(`${prCount}`));
       }
 
       row.push(ticket.lastUpdated);
@@ -218,7 +196,8 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
     if (syncTime) {
       console.log(chalk.dim(`Last synced: ${syncTime.toLocaleString()}`));
     }
-    console.log(chalk.dim('Run `tix sync` to refresh.\n'));
+    console.log(chalk.dim('Run `tix sync` to refresh. Run `tix sync-gh` to link PRs.'));
+    console.log('');
     return;
   }
 

@@ -104,6 +104,12 @@ export async function setupCommand(): Promise<void> {
         message: 'Default GitHub org:',
         default: '',
       },
+      {
+        type: 'input',
+        name: 'notionDatabaseUrl',
+        message: 'Notion database URL (optional, speeds up sync — press Enter to skip):',
+        default: '',
+      },
     ]);
 
     const config: EqConfig = {
@@ -111,10 +117,21 @@ export async function setupCommand(): Promise<void> {
       githubOrg: answers.githubOrg.trim(),
     };
 
+    // Save the full database URL for view mode sync
+    if (answers.notionDatabaseUrl.trim()) {
+      config.notionDatabaseUrl = answers.notionDatabaseUrl.trim();
+      console.log(chalk.dim(`Notion database URL saved for fast sync.`));
+    }
+
     saveConfig(config);
 
     console.log(chalk.green(`\n✅ Config saved to ${getConfigPath()}`));
     console.log(chalk.dim('\nSync mode configured. Make sure Claude has a Notion MCP server set up.'));
+    if (config.notionDatabaseUrl) {
+      console.log(chalk.dim('Database URL saved — `tix sync` will use fast view-mode queries.'));
+    } else {
+      console.log(chalk.dim('No database URL provided — `tix sync` will use slower fallback mode.'));
+    }
     console.log(chalk.dim('Run `tix sync` to fetch your tickets via Claude CLI.\n'));
   }
 }

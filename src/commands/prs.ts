@@ -3,6 +3,7 @@ import Table from 'cli-table3';
 import { execSync } from 'child_process';
 import { loadConfig } from '../lib/config';
 import { checkGhCli, getUnresolvedCommentCount, parsePRUrl } from '../lib/github';
+import { loadSyncedTickets } from '../lib/ticket-store';
 
 interface SearchPR {
   number: number;
@@ -70,6 +71,18 @@ export async function prsCommand(): Promise<void> {
     return;
   }
 
+  // Build set of known ticket numbers from cache
+  const cachedTickets = loadSyncedTickets();
+  const knownTicketNumbers = new Set<string>();
+  for (const t of cachedTickets) {
+    if (!t.ticketNumber) continue;
+    const upper = t.ticketNumber.toUpperCase();
+    knownTicketNumbers.add(upper);
+    // Support both TN- and NT- prefixes (convention changed over time)
+    if (upper.startsWith('TN-')) knownTicketNumbers.add(upper.replace('TN-', 'NT-'));
+    if (upper.startsWith('NT-')) knownTicketNumbers.add(upper.replace('NT-', 'TN-'));
+  }
+
   process.stdout.write(chalk.dim(`Checking unresolved comments...\n\n`));
 
   const table = new Table({
@@ -114,9 +127,14 @@ export async function prsCommand(): Promise<void> {
     const updated = new Date(pr.updatedAt);
     const dateStr = updated.toISOString().slice(0, 10);
 
+    const isOrphan = ticketId && !knownTicketNumbers.has(ticketId);
+    const ticketCell = ticketId
+      ? (isOrphan ? chalk.yellow(`${ticketId} ⚠`) : chalk.white(ticketId))
+      : chalk.dim('—');
+
     table.push([
       chalk.cyan(`${pr.number}`),
-      ticketId ? chalk.white(ticketId) : chalk.dim('—'),
+      ticketCell,
       repo.includes('/') ? repo.split('/')[1] : repo,
       pr.title.length > 25 ? pr.title.slice(0, 22) + '...' : pr.title,
       reviewIcon(reviewDecision),
@@ -126,5 +144,15 @@ export async function prsCommand(): Promise<void> {
   }
 
   console.log(table.toString());
-  console.log(chalk.dim(`\n${prs.length} open PR(s)\n`));
+
+  const orphanCount = prs.filter(pr => {
+    const tid = extractTicketId(pr.title);
+    return tid && !knownTicketNumbers.has(tid);
+  }).length;
+
+  console.log(chalk.dim(`\n${prs.length} open PR(s)`));
+  if (orphanCount > 0) {
+    console.log(chalk.yellow(`⚠ ${orphanCount} PR(s) reference tickets not in your Notion cache — run \`tix sync\` to refresh`));
+  }
+  console.log('');
 }
