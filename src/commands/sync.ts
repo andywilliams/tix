@@ -53,7 +53,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   }
 
   const claudeCmd = 'claude';
-  const claudeArgs = ['--print', '-p', prompt];
+  const claudeArgs = ['--print', '--allowedTools', 'mcp__notion__*', '-p', prompt];
 
   if (verbose) {
     console.log(chalk.dim(`Running: ${claudeCmd} ${claudeArgs.map(a => a.length > 50 ? a.slice(0, 50) + '...' : a).join(' ')}`));
