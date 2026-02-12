@@ -83,6 +83,17 @@ export interface ReviewSettings {
   usageContext: boolean;
 }
 
+export interface CachedPR {
+  number: number;
+  title: string;
+  url: string;
+  repo: string;
+  ticketId: string;
+  reviewDecision: string;
+  unresolvedComments: number;
+  updatedAt: string;
+}
+
 export type CompletedPeriod = 'none' | 'week' | '2weeks' | 'month' | 'quarter' | 'year';
 
 export interface StatusSettings {

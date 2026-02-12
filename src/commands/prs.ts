@@ -1,23 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { execSync } from 'child_process';
-import { loadConfig } from '../lib/config';
-import { checkGhCli, getUnresolvedCommentCount, parsePRUrl } from '../lib/github';
-import { loadSyncedTickets } from '../lib/ticket-store';
-
-interface SearchPR {
-  number: number;
-  title: string;
-  url: string;
-  repository: { nameWithOwner: string };
-  state: string;
-  updatedAt: string;
-}
-
-function extractTicketId(title: string): string {
-  const match = title.match(/^\[?([A-Za-z]+-\d+)\]?/i);
-  return match ? match[1].toUpperCase() : '';
-}
+import { loadSyncedTickets, loadCachedPRs, hasCachedPRs, getPRsSyncTimestamp } from '../lib/ticket-store';
 
 function reviewIcon(decision: string): string {
   switch (decision) {
@@ -28,48 +11,25 @@ function reviewIcon(decision: string): string {
   }
 }
 
+function formatComments(count: number): string {
+  if (count === 0) return chalk.green('✓');
+  if (count <= 2) return chalk.yellow(`${count}`);
+  return chalk.red(`${count}`);
+}
+
 export async function prsCommand(): Promise<void> {
-  if (!checkGhCli()) {
-    console.log(chalk.red('`gh` CLI not found or not authenticated. Run `gh auth login`.'));
+  if (!hasCachedPRs()) {
+    console.log(chalk.yellow('No cached PR data. Run `tix sync-gh` first.'));
     return;
   }
 
-  const config = loadConfig();
+  const prs = loadCachedPRs();
+  if (prs.length === 0) {
+    console.log(chalk.yellow('No open PRs in cache. Run `tix sync-gh` to refresh.'));
+    return;
+  }
 
   console.log(chalk.bold.cyan('\n🔀 Open Pull Requests\n'));
-
-  let username: string;
-  try {
-    username = execSync('gh api user --jq .login', { stdio: 'pipe', encoding: 'utf-8' }).trim();
-  } catch {
-    console.log(chalk.red('Could not determine GitHub username.'));
-    return;
-  }
-
-  process.stdout.write(chalk.dim(`Searching for open PRs by ${username}...\n`));
-
-  let prs: SearchPR[];
-  try {
-    const ownerFlag = config.githubOrg ? `--owner "${config.githubOrg}"` : '';
-    const result = execSync(
-      `gh search prs --author "${username}" --state open ${ownerFlag} --json number,title,url,repository,state,updatedAt --limit 50`,
-      { stdio: 'pipe', encoding: 'utf-8' }
-    );
-    prs = JSON.parse(result);
-  } catch (err: any) {
-    const msg = err.stderr?.toString() || err.message || '';
-    if (msg.includes('401') || msg.includes('Bad credentials')) {
-      console.log(chalk.red('GitHub auth expired. Run `gh auth login`.'));
-    } else {
-      console.log(chalk.red(`Failed to search PRs: ${msg.trim()}`));
-    }
-    return;
-  }
-
-  if (prs.length === 0) {
-    console.log(chalk.yellow('No open PRs found.'));
-    return;
-  }
 
   // Build set of known ticket numbers from cache
   const cachedTickets = loadSyncedTickets();
@@ -78,12 +38,9 @@ export async function prsCommand(): Promise<void> {
     if (!t.ticketNumber) continue;
     const upper = t.ticketNumber.toUpperCase();
     knownTicketNumbers.add(upper);
-    // Support both TN- and NT- prefixes (convention changed over time)
     if (upper.startsWith('TN-')) knownTicketNumbers.add(upper.replace('TN-', 'NT-'));
     if (upper.startsWith('NT-')) knownTicketNumbers.add(upper.replace('NT-', 'TN-'));
   }
-
-  process.stdout.write(chalk.dim(`Checking unresolved comments...\n\n`));
 
   const table = new Table({
     head: [
@@ -101,58 +58,38 @@ export async function prsCommand(): Promise<void> {
   });
 
   for (const pr of prs) {
-    const ticketId = extractTicketId(pr.title);
-    const repo = pr.repository.nameWithOwner;
-    const parsed = parsePRUrl(pr.url);
-    let unresolvedComments = 0;
-    let reviewDecision = '';
-    if (parsed) {
-      unresolvedComments = getUnresolvedCommentCount(parsed.owner, parsed.repo, parsed.number);
-      try {
-        reviewDecision = execSync(
-          `gh pr view ${parsed.number} --repo ${repo} --json reviewDecision --jq .reviewDecision`,
-          { stdio: 'pipe', encoding: 'utf-8' }
-        ).trim();
-      } catch {
-        // ignore
-      }
-    }
-
-    const commentsCell = unresolvedComments === 0
-      ? chalk.green('✓')
-      : unresolvedComments <= 2
-        ? chalk.yellow(`${unresolvedComments}`)
-        : chalk.red(`${unresolvedComments}`);
-
-    const updated = new Date(pr.updatedAt);
-    const dateStr = updated.toISOString().slice(0, 10);
-
+    const ticketId = pr.ticketId;
     const isOrphan = ticketId && !knownTicketNumbers.has(ticketId);
     const ticketCell = ticketId
       ? (isOrphan ? chalk.yellow(`${ticketId} ⚠`) : chalk.white(ticketId))
       : chalk.dim('—');
 
+    const repoShort = pr.repo.includes('/') ? pr.repo.split('/')[1] : pr.repo;
+    const dateStr = new Date(pr.updatedAt).toISOString().slice(0, 10);
+
     table.push([
       chalk.cyan(`${pr.number}`),
       ticketCell,
-      repo.includes('/') ? repo.split('/')[1] : repo,
+      repoShort,
       pr.title.length > 25 ? pr.title.slice(0, 22) + '...' : pr.title,
-      reviewIcon(reviewDecision),
-      commentsCell,
+      reviewIcon(pr.reviewDecision),
+      formatComments(pr.unresolvedComments),
       dateStr,
     ]);
   }
 
   console.log(table.toString());
 
-  const orphanCount = prs.filter(pr => {
-    const tid = extractTicketId(pr.title);
-    return tid && !knownTicketNumbers.has(tid);
-  }).length;
+  const orphanCount = prs.filter(pr => pr.ticketId && !knownTicketNumbers.has(pr.ticketId)).length;
 
   console.log(chalk.dim(`\n${prs.length} open PR(s)`));
   if (orphanCount > 0) {
     console.log(chalk.yellow(`⚠ ${orphanCount} PR(s) reference tickets not in your Notion cache — run \`tix sync\` to refresh`));
   }
+  const syncTime = getPRsSyncTimestamp();
+  if (syncTime) {
+    console.log(chalk.dim(`Last synced: ${syncTime.toLocaleString()}`));
+  }
+  console.log(chalk.dim('Run `tix sync-gh` to refresh.'));
   console.log('');
 }
