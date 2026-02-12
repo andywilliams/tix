@@ -11,6 +11,7 @@ import { reviewCommand } from './commands/review';
 import { reviewConfigCommand } from './commands/review-config';
 import { syncCommand } from './commands/sync';
 import { syncGhCommand } from './commands/sync-gh';
+import { prsCommand } from './commands/prs';
 
 const program = new Command();
 
@@ -128,6 +129,18 @@ program
   .action(async (options: any) => {
     try {
       await syncCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('prs')
+  .description('Show all your open GitHub PRs with ticket IDs')
+  .action(async () => {
+    try {
+      await prsCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

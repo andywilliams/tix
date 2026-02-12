@@ -83,6 +83,28 @@ tix status --completed month
 
 Available periods: `none`, `week` (default), `2weeks`, `month`, `quarter`, `year`. Your choice is saved to `~/.tix/settings.json` and used in future runs.
 
+### `tix prs`
+
+Shows all your open GitHub PRs with ticket IDs, review status, and unresolved comment counts:
+
+```bash
+tix prs
+```
+
+```
+🔀 Open Pull Requests
+
+┌────────┬────────────┬──────────────────────┬────────────────────────────┬──────────────┬──────────┬────────────┐
+│ #      │ Ticket     │ Repo                 │ Title                      │ Review       │ Comments │ Updated    │
+├────────┼────────────┼──────────────────────┼────────────────────────────┼──────────────┼──────────┼────────────┤
+│ 2586   │ TN-11835   │ em-transactions-api  │ TN-11835 Add validation... │ ✓ approved   │ ✓        │ 2026-02-10 │
+│ 415    │ TN-9969    │ em-reports-api       │ TN-9969 Update descript... │ ◐ pending    │ 2        │ 2026-02-10 │
+│ 88     │ —          │ tix                  │ Fix table column widths    │ —            │ ✓        │ 2026-02-08 │
+└────────┴────────────┴──────────────────────┴────────────────────────────┴──────────────┴──────────┴────────────┘
+```
+
+Ticket IDs are extracted from PR title prefixes (e.g. "TN-11835 Add validation..." → `TN-11835`). Uses your GitHub username from `gh auth` and scopes to your configured `githubOrg`.
+
 ### `tix sync`
 
 Fetch your tickets from Notion via Claude CLI (for sync mode — no API key required). Requires Claude Code with a Notion MCP server configured:
@@ -93,15 +115,35 @@ tix sync
 
 Invokes `claude --print` with a prompt asking for your assigned tickets as JSON. Results are cached to `~/.tix/tickets/_summary.json`. Run this periodically to keep your local ticket data up to date.
 
+### `tix sync-gh`
+
+Search GitHub for PRs matching each cached ticket's ID and save the links locally. Much faster than `tix sync` since it doesn't touch Notion:
+
+```bash
+tix sync-gh
+```
+
+For each cached ticket with a ticket number (e.g. `TN-11835`), searches GitHub for PRs with that ID in the title and writes the PR URLs into the ticket cache. After running this, `tix status` will show PR counts and comment info without needing to search GitHub again.
+
+**Recommended workflow:**
+```bash
+tix sync        # fetch tickets from Notion (slow, do occasionally)
+tix sync-gh     # find PRs for each ticket (fast, do often)
+tix status      # view everything
+```
+
 ### `tix ticket <notion-url-or-id>`
 
 Deep-dive into a single ticket. Shows full details and fetches GitHub PR status:
 
 ```bash
+# With a ticket number (shorthand — no subcommand needed)
+tix tn-11835
+
 # With a Notion URL
 tix ticket "https://www.notion.so/workspace/Fix-auth-token-abc123def456"
 
-# With just the ID
+# With just the Notion page ID
 tix ticket abc123def456
 ```
 
@@ -305,7 +347,8 @@ Edit review settings interactively with `tix review-config`, or pass CLI flags t
 
 - Use `tix inspect` first to discover your database's property names — they may differ from the defaults
 - The `status` command filters by name matching, so your `userName` must match how Notion displays your name in the "Assigned to" (or similar) people property
-- PR detection scans page content blocks for GitHub URLs — make sure PRs are linked in your tickets
+- PR detection works by searching GitHub for PRs whose title contains the ticket number — name your PRs like "TN-123 Fix the thing" for automatic linking
 - `tix work` defaults to Claude for interactive sessions where you can guide the AI — use `--ai codex` for fully autonomous implementation
-- In sync mode, run `tix sync` regularly to keep cached tickets fresh — `tix status` shows when tickets were last synced
+- In sync mode, run `tix sync` occasionally to refresh tickets from Notion, then `tix sync-gh` to quickly find associated PRs
 - Sync mode works with any Claude MCP setup that has Notion access — no need to create a dedicated Notion API integration
+- Use `tix tn-123` as a shorthand for `tix ticket tn-123` — any argument matching a ticket ID pattern is automatically treated as a ticket lookup
