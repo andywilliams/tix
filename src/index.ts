@@ -125,7 +125,8 @@ program
   .command('sync')
   .description('Sync tickets from Notion via Claude CLI (no API key needed)')
   .option('--verbose', 'Show detailed logs for debugging')
-  .option('--timeout <seconds>', 'Timeout in seconds (default: 300)')
+  .option('--timeout <seconds>', 'Timeout in seconds (default: 60)')
+  .option('--discover', 'Re-discover the Notion database (clears cached data source ID)')
   .action(async (options: any) => {
     try {
       await syncCommand(options);
