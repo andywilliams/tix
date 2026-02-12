@@ -7,6 +7,7 @@ export interface EqConfig {
 
 export interface TicketSummary {
   id: string;
+  ticketNumber: string;
   title: string;
   status: string;
   priority: string;

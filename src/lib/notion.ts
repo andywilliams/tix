@@ -1,6 +1,10 @@
 import { Client } from '@notionhq/client';
 import { EqConfig, TicketSummary, TicketDetail } from '../types';
 
+const COMPLETED_STATUSES = new Set([
+  'done', 'complete', 'completed', 'shipped', 'released', 'closed', "won't do", 'wont do',
+]);
+
 export function createNotionClient(config: EqConfig): Client {
   return new Client({ auth: config.notionApiKey });
 }
@@ -125,7 +129,11 @@ export async function queryMyTickets(
     const titleProp = findTitleProperty(props);
     const title = extractPropertyValue(props[titleProp]);
     const status = findProperty(props, ['Status', 'State', 'Stage']);
+
+    if (COMPLETED_STATUSES.has(status.toLowerCase())) continue;
+
     const priority = findProperty(props, ['Priority', 'Importance', 'Urgency', 'P']);
+    const ticketNumber = findProperty(props, ['New ID', 'ID', 'Ticket ID', 'Ticket Number']);
     const lastUpdated = (page as any).last_edited_time || '';
 
     const pageId = (page as any).id;
@@ -156,6 +164,7 @@ export async function queryMyTickets(
 
     tickets.push({
       id: pageId,
+      ticketNumber: ticketNumber || '—',
       title: title || '(untitled)',
       status: status || '—',
       priority: priority || '—',

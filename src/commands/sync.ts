@@ -26,6 +26,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     '[',
     '  {',
     '    "id": "notion-page-id",',
+    '    "ticketNumber": "NEW-123",',
     '    "title": "Ticket title",',
     '    "status": "Status value",',
     '    "priority": "Priority value",',
@@ -35,7 +36,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     '  }',
     ']',
     '',
-    'Include all tickets assigned to this person regardless of status.',
+    'The "ticketNumber" is from the "New ID" property.',
+    'Exclude tickets with completed statuses (Done, Complete, Completed, Shipped, Released, Closed, Won\'t Do).',
+    'Only include active/in-progress/to-do tickets.',
     'For githubLinks, extract any GitHub URLs found in the ticket content.',
     'If a field is unknown, use an empty string or empty array as appropriate.',
     'Return ONLY the JSON array, nothing else.',
@@ -130,6 +133,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
     tickets = parsed.map((t: any) => ({
       id: String(t.id || ''),
+      ticketNumber: String(t.ticketNumber || ''),
       title: String(t.title || ''),
       status: String(t.status || ''),
       priority: String(t.priority || ''),
