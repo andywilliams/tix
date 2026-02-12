@@ -20,20 +20,32 @@ Run the interactive setup wizard:
 tix setup
 ```
 
+You'll be asked to choose a connection mode:
+
+### Option A: Notion API Key (direct access)
+
 You'll be prompted for:
 - **Notion API key** — create an integration at https://www.notion.so/my-integrations
 - **Notion database ID** — the database where your team tracks tickets (paste the URL, the ID is extracted automatically)
 - **Your name** — as it appears in Notion's "Assigned to" field
 - **GitHub org** — default org for PR references (e.g. `your-org`)
 
-Config is saved to `~/.eqrc.json`.
-
-### Notion Integration Setup
+#### Notion Integration Setup
 
 1. Go to https://www.notion.so/my-integrations
 2. Create a new integration for your workspace
 3. Copy the "Internal Integration Token" (starts with `secret_` or `ntn_`)
 4. In Notion, share your ticket database with the integration (click "..." → "Add connections")
+
+### Option B: Claude CLI with Notion MCP (sync mode)
+
+If you don't have a Notion API key but have Claude Code configured with a Notion MCP server, you can use sync mode instead. You'll only be prompted for:
+- **Your name** — as it appears in Notion's "Assigned to" field
+- **GitHub org** — default org for PR references
+
+Then run `tix sync` to fetch your tickets via Claude CLI. Tickets are cached locally in `~/.tix/tickets/` and used by `tix status`, `tix ticket`, and `tix work`.
+
+Config is saved to `~/.eqrc.json`.
 
 ## Commands
 
@@ -55,6 +67,16 @@ Shows your assigned tickets in a color-coded table with PR and comment info:
 
 - **PRs** — number of linked GitHub PRs found in the ticket
 - **Comments** — total unresolved review comments across linked PRs (✓ = all resolved)
+
+### `tix sync`
+
+Fetch your tickets from Notion via Claude CLI (for sync mode — no API key required). Requires Claude Code with a Notion MCP server configured:
+
+```bash
+tix sync
+```
+
+Invokes `claude --print` with a prompt asking for your assigned tickets as JSON. Results are cached to `~/.tix/tickets/_summary.json`. Run this periodically to keep your local ticket data up to date.
 
 ### `tix ticket <notion-url-or-id>`
 
@@ -229,9 +251,16 @@ tix bust "api#42" --dry-run --verbose --ai claude
 `~/.eqrc.json`:
 
 ```json
+// API mode (all fields)
 {
   "notionApiKey": "secret_...",
   "notionDatabaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "userName": "Andy",
+  "githubOrg": "your-org"
+}
+
+// Sync mode (no API key — uses `tix sync` instead)
+{
   "userName": "Andy",
   "githubOrg": "your-org"
 }
@@ -260,3 +289,5 @@ Edit review settings interactively with `tix review-config`, or pass CLI flags t
 - The `status` command filters by name matching, so your `userName` must match how Notion displays your name in the "Assigned to" (or similar) people property
 - PR detection scans page content blocks for GitHub URLs — make sure PRs are linked in your tickets
 - `tix work` defaults to Claude for interactive sessions where you can guide the AI — use `--ai codex` for fully autonomous implementation
+- In sync mode, run `tix sync` regularly to keep cached tickets fresh — `tix status` shows when tickets were last synced
+- Sync mode works with any Claude MCP setup that has Notion access — no need to create a dedicated Notion API integration

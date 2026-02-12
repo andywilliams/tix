@@ -1,8 +1,9 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig } from '../lib/config';
+import { loadConfig, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, queryMyTickets } from '../lib/notion';
 import { getPRInfo, parsePRUrl } from '../lib/github';
+import { loadSyncedTickets, hasSyncedTickets, getSyncTimestamp } from '../lib/ticket-store';
 
 const STATUS_COLORS: Record<string, (s: string) => string> = {
   // Done / Complete
@@ -66,9 +67,59 @@ function formatComments(count: number): string {
 
 export async function statusCommand(): Promise<void> {
   const config = loadConfig();
-  const notion = createNotionClient(config);
 
   console.log(chalk.bold.cyan(`\n📋 Tickets for ${config.userName}\n`));
+
+  if (!hasNotionApiConfig(config)) {
+    // Sync mode: use cached tickets
+    if (!hasSyncedTickets()) {
+      console.log(chalk.yellow('No cached tickets found. Run `tix sync` first to fetch tickets via Claude CLI.'));
+      return;
+    }
+
+    const tickets = loadSyncedTickets();
+    const syncTime = getSyncTimestamp();
+
+    if (tickets.length === 0) {
+      console.log(chalk.yellow('No tickets in cache. Run `tix sync` to refresh.'));
+      return;
+    }
+
+    const table = new Table({
+      head: [
+        chalk.bold('Title'),
+        chalk.bold('Status'),
+        chalk.bold('Priority'),
+        chalk.bold('Updated'),
+      ],
+      colWidths: [42, 16, 14, 12],
+      wordWrap: true,
+      style: {
+        head: [],
+        border: ['dim'],
+      },
+    });
+
+    for (const ticket of tickets) {
+      table.push([
+        ticket.title.length > 39 ? ticket.title.slice(0, 36) + '...' : ticket.title,
+        colorStatus(ticket.status),
+        formatPriority(ticket.priority),
+        ticket.lastUpdated,
+      ]);
+    }
+
+    console.log(table.toString());
+    console.log(chalk.dim(`\n${tickets.length} ticket(s) from cache`));
+    if (syncTime) {
+      console.log(chalk.dim(`Last synced: ${syncTime.toLocaleString()}`));
+    }
+    console.log(chalk.dim('Run `tix sync` to refresh.\n'));
+    return;
+  }
+
+  // API mode: fetch directly from Notion
+  const notion = createNotionClient(config);
 
   const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let i = 0;

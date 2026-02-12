@@ -3,9 +3,11 @@ import inquirer from 'inquirer';
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadConfig, extractNotionId } from '../lib/config';
+import { loadConfig, extractNotionId, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, getTicketDetail } from '../lib/notion';
 import { checkGhCli } from '../lib/github';
+import { loadSyncedTickets, loadTicketDetail, findTicketByIdOrUrl } from '../lib/ticket-store';
+import type { TicketDetail } from '../types';
 
 interface WorkOptions {
   repo?: string;
@@ -128,31 +130,70 @@ function branchExists(repoDir: string, branchName: string): boolean {
 
 export async function workCommand(ticketArg: string, options: WorkOptions): Promise<void> {
   const config = loadConfig();
-  const notion = createNotionClient(config);
   const isDryRun = !!options.dryRun;
-
-  // ── Step 1: Fetch the ticket ──────────────────────────────────
-  let pageId: string;
-  try {
-    pageId = extractNotionId(ticketArg);
-  } catch (err: any) {
-    console.error(chalk.red(`Error: ${err.message}`));
-    process.exit(1);
-  }
+  const useApi = hasNotionApiConfig(config);
 
   console.log(chalk.bold.cyan('\n🔧 tix work — Implement a ticket with AI\n'));
-  console.log(chalk.dim('Fetching ticket from Notion...'));
 
-  let detail;
-  try {
-    detail = await getTicketDetail(notion, pageId);
-  } catch (err: any) {
-    console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
-    process.exit(1);
+  let detail: TicketDetail;
+  let bodyText: string;
+  let pageId: string;
+
+  if (useApi) {
+    const notion = createNotionClient(config);
+
+    try {
+      pageId = extractNotionId(ticketArg);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
+
+    console.log(chalk.dim('Fetching ticket from Notion...'));
+
+    try {
+      detail = await getTicketDetail(notion, pageId);
+    } catch (err: any) {
+      console.error(chalk.red(`Failed to fetch ticket: ${err.message}`));
+      process.exit(1);
+    }
+
+    bodyText = await getPageBodyText(notion, pageId);
+  } else {
+    // Sync mode: look up in cache
+    const tickets = loadSyncedTickets();
+    const cached = findTicketByIdOrUrl(ticketArg, tickets);
+
+    if (!cached) {
+      console.error(chalk.red(`Ticket not found in cache: ${ticketArg}`));
+      console.log(chalk.dim('Run `tix sync` to refresh cached tickets.'));
+      process.exit(1);
+    }
+
+    // Try to load detailed cache, otherwise construct from summary
+    const cachedDetail = loadTicketDetail(cached.id);
+    if (cachedDetail) {
+      detail = cachedDetail;
+    } else {
+      detail = {
+        id: cached.id,
+        title: cached.title,
+        status: cached.status,
+        priority: cached.priority,
+        assignee: config.userName,
+        lastUpdated: cached.lastUpdated,
+        url: cached.url,
+        properties: {},
+        githubLinks: cached.githubLinks,
+        prs: [],
+      };
+    }
+
+    pageId = cached.id;
+    bodyText = '';
   }
 
   // ── Step 2: Extract ticket info ───────────────────────────────
-  const bodyText = await getPageBodyText(notion, pageId);
 
   console.log(chalk.bold.white(`\n📋 ${detail.title}`));
   console.log(chalk.dim('─'.repeat(60)));

@@ -22,58 +22,99 @@ export async function setupCommand(): Promise<void> {
     }
   }
 
-  const answers = await inquirer.prompt([
+  const { mode } = await inquirer.prompt([
     {
-      type: 'password',
-      name: 'notionApiKey',
-      message: 'Notion API key (integration token):',
-      mask: '*',
-      validate: (input: string) =>
-        input.startsWith('secret_') || input.startsWith('ntn_')
-          ? true
-          : 'Notion API keys start with "secret_" or "ntn_"',
-    },
-    {
-      type: 'input',
-      name: 'notionDatabaseId',
-      message: 'Notion database ID (or full URL):',
-      validate: (input: string) => {
-        try {
-          extractNotionId(input);
-          return true;
-        } catch {
-          return 'Could not extract a valid Notion ID. Provide a 32-char hex ID or Notion URL.';
-        }
-      },
-    },
-    {
-      type: 'input',
-      name: 'userName',
-      message: 'Your name (as it appears in Notion "Assigned to"):',
-      validate: (input: string) =>
-        input.trim().length > 0 ? true : 'Name is required',
-    },
-    {
-      type: 'input',
-      name: 'githubOrg',
-      message: 'Default GitHub org:',
-      default: '',
+      type: 'list',
+      name: 'mode',
+      message: 'How do you want to connect to Notion?',
+      choices: [
+        { name: 'Notion API key (direct access)', value: 'api' },
+        { name: 'Claude CLI with Notion MCP (sync mode)', value: 'sync' },
+      ],
     },
   ]);
 
-  const config: EqConfig = {
-    notionApiKey: answers.notionApiKey.trim(),
-    notionDatabaseId: extractNotionId(answers.notionDatabaseId),
-    userName: answers.userName.trim(),
-    githubOrg: answers.githubOrg.trim(),
-  };
+  if (mode === 'api') {
+    const answers = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'notionApiKey',
+        message: 'Notion API key (integration token):',
+        mask: '*',
+        validate: (input: string) =>
+          input.startsWith('secret_') || input.startsWith('ntn_')
+            ? true
+            : 'Notion API keys start with "secret_" or "ntn_"',
+      },
+      {
+        type: 'input',
+        name: 'notionDatabaseId',
+        message: 'Notion database ID (or full URL):',
+        validate: (input: string) => {
+          try {
+            extractNotionId(input);
+            return true;
+          } catch {
+            return 'Could not extract a valid Notion ID. Provide a 32-char hex ID or Notion URL.';
+          }
+        },
+      },
+      {
+        type: 'input',
+        name: 'userName',
+        message: 'Your name (as it appears in Notion "Assigned to"):',
+        validate: (input: string) =>
+          input.trim().length > 0 ? true : 'Name is required',
+      },
+      {
+        type: 'input',
+        name: 'githubOrg',
+        message: 'Default GitHub org:',
+        default: '',
+      },
+    ]);
 
-  saveConfig(config);
+    const config: EqConfig = {
+      notionApiKey: answers.notionApiKey.trim(),
+      notionDatabaseId: extractNotionId(answers.notionDatabaseId),
+      userName: answers.userName.trim(),
+      githubOrg: answers.githubOrg.trim(),
+    };
 
-  console.log(chalk.green(`\n✅ Config saved to ${getConfigPath()}`));
-  console.log(chalk.dim('\nYou can now run:'));
-  console.log(chalk.dim('  eq status    — view your tickets'));
-  console.log(chalk.dim('  eq ticket    — deep-dive a ticket'));
-  console.log(chalk.dim('  eq inspect   — inspect Notion structure'));
-  console.log(chalk.dim('  eq bust      — run bugbot-buster on a PR\n'));
+    saveConfig(config);
+
+    console.log(chalk.green(`\n✅ Config saved to ${getConfigPath()}`));
+    console.log(chalk.dim('\nYou can now run:'));
+    console.log(chalk.dim('  eq status    — view your tickets'));
+    console.log(chalk.dim('  eq ticket    — deep-dive a ticket'));
+    console.log(chalk.dim('  eq inspect   — inspect Notion structure'));
+    console.log(chalk.dim('  eq bust      — run bugbot-buster on a PR\n'));
+  } else {
+    const answers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'userName',
+        message: 'Your name (as it appears in Notion "Assigned to"):',
+        validate: (input: string) =>
+          input.trim().length > 0 ? true : 'Name is required',
+      },
+      {
+        type: 'input',
+        name: 'githubOrg',
+        message: 'Default GitHub org:',
+        default: '',
+      },
+    ]);
+
+    const config: EqConfig = {
+      userName: answers.userName.trim(),
+      githubOrg: answers.githubOrg.trim(),
+    };
+
+    saveConfig(config);
+
+    console.log(chalk.green(`\n✅ Config saved to ${getConfigPath()}`));
+    console.log(chalk.dim('\nSync mode configured. Make sure Claude has a Notion MCP server set up.'));
+    console.log(chalk.dim('Run `tix sync` to fetch your tickets via Claude CLI.\n'));
+  }
 }
