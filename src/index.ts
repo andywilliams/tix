@@ -33,9 +33,10 @@ program
 program
   .command('status')
   .description('Show your assigned tickets from Notion')
-  .action(async () => {
+  .option('--completed <period>', 'Filter completed tickets: none, week, 2weeks, month, quarter, year')
+  .action(async (options: any) => {
     try {
-      await statusCommand();
+      await statusCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
