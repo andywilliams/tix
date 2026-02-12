@@ -10,13 +10,12 @@ interface SearchPR {
   url: string;
   repository: { nameWithOwner: string };
   state: string;
-  reviewDecision: string;
   updatedAt: string;
 }
 
 function extractTicketId(title: string): string {
-  const match = title.match(/^([A-Z]+-\d+)/);
-  return match ? match[1] : '';
+  const match = title.match(/^\[?([A-Za-z]+-\d+)\]?/i);
+  return match ? match[1].toUpperCase() : '';
 }
 
 function reviewIcon(decision: string): string {
@@ -52,7 +51,7 @@ export async function prsCommand(): Promise<void> {
   try {
     const ownerFlag = config.githubOrg ? `--owner "${config.githubOrg}"` : '';
     const result = execSync(
-      `gh search prs --author "${username}" --state open ${ownerFlag} --json number,title,url,repository,state,reviewDecision,updatedAt --limit 50`,
+      `gh search prs --author "${username}" --state open ${ownerFlag} --json number,title,url,repository,state,updatedAt --limit 50`,
       { stdio: 'pipe', encoding: 'utf-8' }
     );
     prs = JSON.parse(result);
@@ -93,8 +92,17 @@ export async function prsCommand(): Promise<void> {
     const repo = pr.repository.nameWithOwner;
     const parsed = parsePRUrl(pr.url);
     let unresolvedComments = 0;
+    let reviewDecision = '';
     if (parsed) {
       unresolvedComments = getUnresolvedCommentCount(parsed.owner, parsed.repo, parsed.number);
+      try {
+        reviewDecision = execSync(
+          `gh pr view ${parsed.number} --repo ${repo} --json reviewDecision --jq .reviewDecision`,
+          { stdio: 'pipe', encoding: 'utf-8' }
+        ).trim();
+      } catch {
+        // ignore
+      }
     }
 
     const commentsCell = unresolvedComments === 0
@@ -111,7 +119,7 @@ export async function prsCommand(): Promise<void> {
       ticketId ? chalk.white(ticketId) : chalk.dim('—'),
       repo.includes('/') ? repo.split('/')[1] : repo,
       pr.title.length > 25 ? pr.title.slice(0, 22) + '...' : pr.title,
-      reviewIcon(pr.reviewDecision),
+      reviewIcon(reviewDecision),
       commentsCell,
       dateStr,
     ]);
