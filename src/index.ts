@@ -7,6 +7,8 @@ import { ticketCommand } from './commands/ticket';
 import { inspectCommand } from './commands/inspect';
 import { bustCommand } from './commands/bust';
 import { workCommand } from './commands/work';
+import { reviewCommand } from './commands/review';
+import { reviewConfigCommand } from './commands/review-config';
 
 const program = new Command();
 
@@ -90,6 +92,37 @@ program
   .action(async (ticket: string, options: any) => {
     try {
       await workCommand(ticket, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('review <pr-number>')
+  .description('AI-powered code review for a GitHub PR')
+  .option('-r, --repo <owner/repo>', 'GitHub repository (default: current repo)')
+  .option('-a, --ai <provider>', 'AI provider: claude, codex')
+  .option('-H, --harshness <level>', 'Review harshness: chill, medium, pedantic')
+  .option('--dry-run', 'Show comments without posting', false)
+  .option('--batch', 'Post all comments without prompting', false)
+  .option('--full-context', 'Include full file contents for pattern analysis')
+  .option('--usage-context', 'Include files that use changed symbols')
+  .action(async (prNumber: string, options: any) => {
+    try {
+      await reviewCommand(prNumber, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('review-config')
+  .description('Configure default settings for AI code reviews')
+  .action(async () => {
+    try {
+      await reviewConfigCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

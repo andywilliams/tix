@@ -1,6 +1,6 @@
 # tix — Developer CLI
 
-A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, check PR status, implement tickets with AI, and run bugbot-buster — all from the terminal.
+A developer productivity CLI that bridges **Notion** (ticket tracking) and **GitHub** (PRs/code). See your tickets, check PR status, implement tickets with AI, run AI code reviews, and run bugbot-buster — all from the terminal.
 
 ## Installation
 
@@ -117,6 +117,64 @@ tix work "https://notion.so/..." --dry-run
 | `--no-pr` | Skip PR creation prompt | `false` |
 | `--dry-run` | Preview without executing | `false` |
 
+### `tix review <pr-number>`
+
+AI-powered code review for a GitHub pull request. Fetches the PR diff, sends it to an AI for analysis, and lets you interactively select which comments to post:
+
+```bash
+# Review a PR in the current repo
+tix review 42
+
+# Review a PR in a specific repo
+tix review 42 --repo your-org/api
+
+# Preview comments without posting
+tix review 42 --dry-run
+
+# Post all comments without prompting
+tix review 42 --batch
+
+# Override saved settings
+tix review 42 --ai codex --harshness pedantic
+```
+
+**Flow:**
+1. Fetches PR details and diff from GitHub
+2. Optionally gathers full file contents and symbol usage context
+3. Sends everything to the AI (Claude or Codex) for review
+4. Displays each comment with severity, file, and line number
+5. You choose which comments to add, skip, or quit
+6. Selected comments are posted as a single GitHub review
+
+**Options:**
+| Option | Description | Default (saved) |
+|--------|-------------|-----------------|
+| `-r, --repo <owner/repo>` | GitHub repository | current repo |
+| `-a, --ai <provider>` | AI provider: `claude`, `codex` | `claude` |
+| `-H, --harshness <level>` | `chill`, `medium`, or `pedantic` | `medium` |
+| `--dry-run` | Show comments without posting | `false` |
+| `--batch` | Post all comments without prompting | `false` |
+| `--full-context` | Include full file contents for pattern analysis | `true` |
+| `--usage-context` | Find callers of changed symbols for context | `true` |
+
+CLI flags override saved settings. Use `tix review-config` to change defaults.
+
+### `tix review-config`
+
+Interactive editor for review default settings. Settings are saved to `~/.tix/settings.json`:
+
+```bash
+tix review-config
+```
+
+Lets you configure:
+- **AI provider** — Claude or Codex
+- **Harshness** — chill (bugs only), medium (bugs + code smells), pedantic (thorough)
+- **Full context** — send complete file contents alongside the diff
+- **Usage context** — find and include callers of changed symbols
+
+You can also reset all settings to defaults.
+
 ### `tix inspect <notion-url-or-id>`
 
 Debug command to inspect a Notion page or database structure. Essential for figuring out property names:
@@ -163,7 +221,8 @@ tix bust "api#42" --dry-run --verbose --ai claude
 - **Node.js** ≥ 18
 - **GitHub CLI** (`gh`) — installed and authenticated (`gh auth login`)
 - **Notion integration** — with access to your team's database
-- **Claude Code** or **Codex CLI** — for `tix work` and `tix bust`
+- **Claude Code** or **Codex CLI** — for `tix work`, `tix bust`, and `tix review`
+- **ripgrep** (`rg`) — optional, used by `tix review --usage-context` to find symbol usages
 
 ## Config File
 
@@ -177,6 +236,23 @@ tix bust "api#42" --dry-run --verbose --ai claude
   "githubOrg": "your-org"
 }
 ```
+
+## Settings
+
+`~/.tix/settings.json` (created automatically). Each tool gets its own section:
+
+```json
+{
+  "review": {
+    "ai": "claude",
+    "harshness": "medium",
+    "fullContext": true,
+    "usageContext": true
+  }
+}
+```
+
+Edit review settings interactively with `tix review-config`, or pass CLI flags to `tix review` for one-off overrides.
 
 ## Tips
 
