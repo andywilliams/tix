@@ -4,6 +4,8 @@ import { loadConfig, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, queryMyTickets } from '../lib/notion';
 import { getPRInfo, parsePRUrl } from '../lib/github';
 import { loadSyncedTickets, hasSyncedTickets, getSyncTimestamp } from '../lib/ticket-store';
+import { loadStatusSettings, saveStatusSettings } from '../lib/review-config';
+import type { CompletedPeriod, TicketSummary } from '../types';
 
 const STATUS_COLORS: Record<string, (s: string) => string> = {
   // Done / Complete
@@ -65,8 +67,58 @@ function formatComments(count: number): string {
   return chalk.red(`${count}`);
 }
 
-export async function statusCommand(): Promise<void> {
+const COMPLETED_STATUSES = new Set([
+  'done', 'complete', 'completed', 'shipped', 'released', 'closed', "won't do", 'wont do',
+]);
+
+const PERIOD_DAYS: Record<CompletedPeriod, number> = {
+  none: 0,
+  week: 7,
+  '2weeks': 14,
+  month: 30,
+  quarter: 90,
+  year: 365,
+};
+
+const PERIOD_LABELS: Record<CompletedPeriod, string> = {
+  none: '',
+  week: '1 week',
+  '2weeks': '2 weeks',
+  month: '1 month',
+  quarter: '1 quarter',
+  year: '1 year',
+};
+
+function filterCompletedTickets(tickets: TicketSummary[], period: CompletedPeriod): { filtered: TicketSummary[]; hiddenCount: number } {
+  const now = Date.now();
+  let hiddenCount = 0;
+  const filtered = tickets.filter((ticket) => {
+    const isCompleted = COMPLETED_STATUSES.has(ticket.status.toLowerCase());
+    if (!isCompleted) return true;
+    if (period === 'none') {
+      hiddenCount++;
+      return false;
+    }
+    const cutoffMs = PERIOD_DAYS[period] * 24 * 60 * 60 * 1000;
+    const updated = new Date(ticket.lastUpdated).getTime();
+    if (isNaN(updated) || now - updated > cutoffMs) {
+      hiddenCount++;
+      return false;
+    }
+    return true;
+  });
+  return { filtered, hiddenCount };
+}
+
+export async function statusCommand(options: { completed?: string } = {}): Promise<void> {
   const config = loadConfig();
+
+  const statusSettings = loadStatusSettings();
+  const period: CompletedPeriod = (options.completed as CompletedPeriod) || statusSettings.completedPeriod;
+
+  if (options.completed) {
+    saveStatusSettings({ completedPeriod: period });
+  }
 
   console.log(chalk.bold.cyan(`\n📋 Tickets for ${config.userName}\n`));
 
@@ -77,13 +129,15 @@ export async function statusCommand(): Promise<void> {
       return;
     }
 
-    const tickets = loadSyncedTickets();
+    const allTickets = loadSyncedTickets();
     const syncTime = getSyncTimestamp();
 
-    if (tickets.length === 0) {
+    if (allTickets.length === 0) {
       console.log(chalk.yellow('No tickets in cache. Run `tix sync` to refresh.'));
       return;
     }
+
+    const { filtered: tickets, hiddenCount } = filterCompletedTickets(allTickets, period);
 
     const table = new Table({
       head: [
@@ -111,6 +165,9 @@ export async function statusCommand(): Promise<void> {
 
     console.log(table.toString());
     console.log(chalk.dim(`\n${tickets.length} ticket(s) from cache`));
+    if (hiddenCount > 0) {
+      console.log(chalk.dim(`Hiding ${hiddenCount} completed ticket(s) older than ${PERIOD_LABELS[period]}`));
+    }
     if (syncTime) {
       console.log(chalk.dim(`Last synced: ${syncTime.toLocaleString()}`));
     }
@@ -128,19 +185,21 @@ export async function statusCommand(): Promise<void> {
     i++;
   }, 80);
 
-  let tickets;
+  let allApiTickets;
   try {
-    tickets = await queryMyTickets(notion, config);
+    allApiTickets = await queryMyTickets(notion, config);
   } finally {
     clearInterval(interval);
     process.stdout.write('\r' + ' '.repeat(40) + '\r');
   }
 
-  if (tickets.length === 0) {
+  if (allApiTickets.length === 0) {
     console.log(chalk.yellow('No tickets found. Check your config with `tix setup`.'));
     console.log(chalk.dim('Tip: Use `tix inspect <database-url>` to check property names.'));
     return;
   }
+
+  const { filtered: tickets, hiddenCount } = filterCompletedTickets(allApiTickets, period);
 
   // Fetch PR info for tickets with GitHub links
   process.stdout.write(chalk.dim('Checking PRs for unresolved comments...\n'));
@@ -203,5 +262,9 @@ export async function statusCommand(): Promise<void> {
   }
 
   console.log(table.toString());
-  console.log(chalk.dim(`\n${tickets.length} ticket(s) found\n`));
+  console.log(chalk.dim(`\n${tickets.length} ticket(s) found`));
+  if (hiddenCount > 0) {
+    console.log(chalk.dim(`Hiding ${hiddenCount} completed ticket(s) older than ${PERIOD_LABELS[period]}`));
+  }
+  console.log('');
 }

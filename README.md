@@ -68,6 +68,21 @@ Shows your assigned tickets in a color-coded table with PR and comment info:
 - **PRs** — number of linked GitHub PRs found in the ticket
 - **Comments** — total unresolved review comments across linked PRs (✓ = all resolved)
 
+Completed tickets (done, shipped, closed, won't do, etc.) are automatically hidden if they were last updated more than a week ago. Use `--completed` to change the filter:
+
+```bash
+# Hide all completed tickets
+tix status --completed none
+
+# Show completed tickets from the last 2 weeks
+tix status --completed 2weeks
+
+# Show completed tickets from the last month
+tix status --completed month
+```
+
+Available periods: `none`, `week` (default), `2weeks`, `month`, `quarter`, `year`. Your choice is saved to `~/.tix/settings.json` and used in future runs.
+
 ### `tix sync`
 
 Fetch your tickets from Notion via Claude CLI (for sync mode — no API key required). Requires Claude Code with a Notion MCP server configured:
@@ -277,11 +292,14 @@ tix bust "api#42" --dry-run --verbose --ai claude
     "harshness": "medium",
     "fullContext": true,
     "usageContext": true
+  },
+  "status": {
+    "completedPeriod": "week"
   }
 }
 ```
 
-Edit review settings interactively with `tix review-config`, or pass CLI flags to `tix review` for one-off overrides.
+Edit review settings interactively with `tix review-config`, or pass CLI flags to `tix review` for one-off overrides. The `status.completedPeriod` is set automatically when you use `tix status --completed <period>`.
 
 ## Tips
 

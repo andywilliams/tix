@@ -78,3 +78,9 @@ export interface ReviewSettings {
   fullContext: boolean;
   usageContext: boolean;
 }
+
+export type CompletedPeriod = 'none' | 'week' | '2weeks' | 'month' | 'quarter' | 'year';
+
+export interface StatusSettings {
+  completedPeriod: CompletedPeriod;
+}

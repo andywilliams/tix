@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { ReviewSettings } from '../types';
+import type { ReviewSettings, StatusSettings } from '../types';
 
 const TIX_DIR = path.join(os.homedir(), '.tix');
 const SETTINGS_FILE = path.join(TIX_DIR, 'settings.json');
@@ -43,5 +43,17 @@ export function loadReviewSettings(): ReviewSettings {
 export function saveReviewSettings(settings: ReviewSettings): void {
   const all = loadAllSettings();
   all.review = settings;
+  saveAllSettings(all);
+}
+
+export function loadStatusSettings(): StatusSettings {
+  const all = loadAllSettings();
+  const saved = all.status || {};
+  return { completedPeriod: 'week', ...saved };
+}
+
+export function saveStatusSettings(settings: StatusSettings): void {
+  const all = loadAllSettings();
+  all.status = settings;
   saveAllSettings(all);
 }
