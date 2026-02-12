@@ -134,6 +134,24 @@ export async function getPRInfo(prUrl: string): Promise<PRInfo | null> {
 }
 
 /**
+ * Search GitHub for PRs whose title contains the given ticket ID.
+ */
+export function searchPRsByTicketId(org: string, ticketId: string): string[] {
+  try {
+    const cmd = `gh search prs --owner "${org}" "${ticketId}" --json url --limit 10`;
+    const result = execSync(cmd, { stdio: 'pipe', encoding: 'utf-8' });
+    const prs = JSON.parse(result);
+    return prs.map((pr: any) => pr.url);
+  } catch (err: any) {
+    const msg = err.stderr?.toString() || err.message || '';
+    if (msg.includes('401') || msg.includes('Bad credentials')) {
+      throw new Error('GitHub auth expired. Run `gh auth login` then `gh auth refresh -s read:org`.');
+    }
+    return [];
+  }
+}
+
+/**
  * Get a formatted PR reference string (e.g. "owner/repo#123").
  */
 export function formatPRRef(url: string): string {

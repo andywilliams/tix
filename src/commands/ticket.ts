@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import { loadConfig, extractNotionId, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, getTicketDetail } from '../lib/notion';
-import { getPRInfo, formatPRRef, checkGhCli } from '../lib/github';
+import { getPRInfo, formatPRRef, checkGhCli, searchPRsByTicketId } from '../lib/github';
 import { loadSyncedTickets, loadTicketDetail, findTicketByIdOrUrl } from '../lib/ticket-store';
 
 function stateIcon(state: string): string {
@@ -61,14 +61,67 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
       console.log(`${chalk.bold('Notion:')}     ${chalk.underline.blue(cached.url)}`);
     }
 
-    if (cached.githubLinks.length > 0) {
-      console.log(chalk.dim('\n─── GitHub Links ───'));
-      for (const link of cached.githubLinks) {
-        console.log(`  ${chalk.underline.blue(link)}`);
-      }
+    // Search GitHub for PRs if none cached
+    let ghLinks = cached.githubLinks || [];
+    if (ghLinks.length === 0 && cached.ticketNumber && config.githubOrg) {
+      process.stdout.write(chalk.dim('Searching GitHub for PRs...\n'));
+      ghLinks = searchPRsByTicketId(config.githubOrg, cached.ticketNumber);
     }
 
-    console.log(chalk.dim('\nShowing cached data (limited). Run `tix sync` to refresh.\n'));
+    if (ghLinks.length > 0) {
+      const prLinks = ghLinks.filter(l => l.includes('/pull/'));
+      const otherLinks = ghLinks.filter(l => !l.includes('/pull/'));
+
+      const hasGh = checkGhCli();
+
+      if (prLinks.length > 0 && hasGh) {
+        console.log(chalk.dim('\n─── Pull Requests ───'));
+
+        const prTable = new Table({
+          head: [
+            chalk.bold('PR'),
+            chalk.bold('Title'),
+            chalk.bold('State'),
+            chalk.bold('Checks'),
+            chalk.bold('Reviews'),
+          ],
+          colWidths: [25, 30, 14, 14, 20],
+          wordWrap: true,
+          style: { head: [], border: ['dim'] },
+        });
+
+        for (const prUrl of prLinks) {
+          const info = await getPRInfo(prUrl);
+          if (info) {
+            prTable.push([
+              formatPRRef(prUrl),
+              info.title.length > 27 ? info.title.slice(0, 24) + '...' : info.title,
+              stateIcon(info.state),
+              checksIcon(info.checks),
+              reviewIcon(info.reviews),
+            ]);
+          }
+        }
+
+        console.log(prTable.toString());
+      } else {
+        console.log(chalk.dim('\n─── GitHub Links ───'));
+        for (const link of ghLinks) {
+          console.log(`  ${chalk.underline.blue(link)}`);
+        }
+      }
+
+      if (otherLinks.length > 0) {
+        console.log(chalk.bold('\nOther Links:'));
+        for (const link of otherLinks) {
+          console.log(`  ${chalk.underline.blue(link)}`);
+        }
+      }
+    } else {
+      console.log(chalk.dim('\nNo GitHub PRs found.'));
+    }
+
+    console.log('');
     return;
   }
 

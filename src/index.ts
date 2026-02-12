@@ -10,6 +10,7 @@ import { workCommand } from './commands/work';
 import { reviewCommand } from './commands/review';
 import { reviewConfigCommand } from './commands/review-config';
 import { syncCommand } from './commands/sync';
+import { syncGhCommand } from './commands/sync-gh';
 
 const program = new Command();
 
@@ -134,6 +135,18 @@ program
   });
 
 program
+  .command('sync-gh')
+  .description('Search GitHub for PRs matching cached tickets (no Notion fetch)')
+  .action(async () => {
+    try {
+      await syncGhCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('review-config')
   .description('Configure default settings for AI code reviews')
   .action(async () => {
@@ -144,5 +157,21 @@ program
       process.exit(1);
     }
   });
+
+// Catch-all: treat unknown commands that look like ticket IDs as `tix ticket <id>`
+program.on('command:*', async (operands: string[]) => {
+  const arg = operands[0];
+  if (arg && /^[A-Za-z]+-\d+$/.test(arg)) {
+    try {
+      await ticketCommand(arg);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  } else {
+    console.error(`Unknown command: ${arg}`);
+    program.help();
+  }
+});
 
 program.parse();

@@ -57,6 +57,7 @@ export function findTicketByIdOrUrl(idOrUrl: string, tickets: TicketSummary[]): 
   const lower = idOrUrl.toLowerCase();
   return tickets.find(t =>
     t.id.toLowerCase() === lower ||
+    (t.ticketNumber && t.ticketNumber.toLowerCase() === lower) ||
     t.url.toLowerCase().includes(lower) ||
     t.id.toLowerCase().includes(lower.replace(/-/g, ''))
   );
