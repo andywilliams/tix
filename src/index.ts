@@ -9,6 +9,7 @@ import { bustCommand } from './commands/bust';
 import { workCommand } from './commands/work';
 import { reviewCommand } from './commands/review';
 import { reviewConfigCommand } from './commands/review-config';
+import { syncCommand } from './commands/sync';
 
 const program = new Command();
 
@@ -111,6 +112,18 @@ program
   .action(async (prNumber: string, options: any) => {
     try {
       await reviewCommand(prNumber, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync')
+  .description('Sync tickets from Notion via Claude CLI (no API key needed)')
+  .action(async () => {
+    try {
+      await syncCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

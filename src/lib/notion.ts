@@ -97,7 +97,7 @@ export async function queryMyTickets(
   try {
     // Try querying with a text-based filter on common assignment properties
     const response = await notion.databases.query({
-      database_id: config.notionDatabaseId,
+      database_id: config.notionDatabaseId!,
       page_size: 100,
     });
     results = response.results;

@@ -19,7 +19,7 @@ export function loadConfig(): EqConfig {
     const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
     const config = JSON.parse(raw) as EqConfig;
 
-    if (!config.notionApiKey || !config.notionDatabaseId || !config.userName) {
+    if (!config.userName) {
       throw new Error('Config is incomplete. Run `eq setup` to reconfigure.');
     }
 
@@ -83,4 +83,8 @@ function formatNotionId(hex: string): string {
     hex.slice(16, 20),
     hex.slice(20, 32),
   ].join('-');
+}
+
+export function hasNotionApiConfig(config: EqConfig): boolean {
+  return !!(config.notionApiKey && config.notionDatabaseId);
 }

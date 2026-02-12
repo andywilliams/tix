@@ -1,8 +1,9 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig, extractNotionId } from '../lib/config';
+import { loadConfig, extractNotionId, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, getTicketDetail } from '../lib/notion';
 import { getPRInfo, formatPRRef, checkGhCli } from '../lib/github';
+import { loadSyncedTickets, loadTicketDetail, findTicketByIdOrUrl } from '../lib/ticket-store';
 
 function stateIcon(state: string): string {
   switch (state) {
@@ -34,6 +35,43 @@ function reviewIcon(reviews: string): string {
 
 export async function ticketCommand(notionUrlOrId: string): Promise<void> {
   const config = loadConfig();
+
+  console.log(chalk.bold.cyan('\n🎫 Ticket Details\n'));
+
+  if (!hasNotionApiConfig(config)) {
+    // Sync mode: look up in cache
+    const tickets = loadSyncedTickets();
+    const cached = findTicketByIdOrUrl(notionUrlOrId, tickets);
+
+    if (!cached) {
+      console.error(chalk.red(`Ticket not found in cache: ${notionUrlOrId}`));
+      console.log(chalk.dim('Run `tix sync` to refresh cached tickets.'));
+      process.exit(1);
+    }
+
+    // Check for detailed cache
+    const detail = loadTicketDetail(cached.id);
+
+    console.log(chalk.bold.white(cached.title));
+    console.log(chalk.dim('─'.repeat(60)));
+    console.log(`${chalk.bold('Status:')}     ${cached.status}`);
+    console.log(`${chalk.bold('Priority:')}   ${cached.priority}`);
+    console.log(`${chalk.bold('Updated:')}    ${cached.lastUpdated}`);
+    if (cached.url) {
+      console.log(`${chalk.bold('Notion:')}     ${chalk.underline.blue(cached.url)}`);
+    }
+
+    if (cached.githubLinks.length > 0) {
+      console.log(chalk.dim('\n─── GitHub Links ───'));
+      for (const link of cached.githubLinks) {
+        console.log(`  ${chalk.underline.blue(link)}`);
+      }
+    }
+
+    console.log(chalk.dim('\nShowing cached data (limited). Run `tix sync` to refresh.\n'));
+    return;
+  }
+
   const notion = createNotionClient(config);
 
   let pageId: string;
@@ -43,8 +81,6 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
     console.error(chalk.red(`Error: ${err.message}`));
     process.exit(1);
   }
-
-  console.log(chalk.bold.cyan('\n🎫 Ticket Details\n'));
 
   // Fetch ticket
   let detail;
