@@ -79,13 +79,14 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
 
         const prTable = new Table({
           head: [
-            chalk.bold('PR'),
+            chalk.bold('#'),
+            chalk.bold('Repo'),
             chalk.bold('Title'),
             chalk.bold('State'),
             chalk.bold('Checks'),
             chalk.bold('Reviews'),
           ],
-          colWidths: [25, 30, 14, 14, 20],
+          colWidths: [8, 20, 28, 14, 14, 20],
           wordWrap: true,
           style: { head: [], border: ['dim'] },
         });
@@ -94,8 +95,9 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
           const info = await getPRInfo(prUrl);
           if (info) {
             prTable.push([
-              formatPRRef(prUrl),
-              info.title.length > 27 ? info.title.slice(0, 24) + '...' : info.title,
+              chalk.cyan(`${info.number}`),
+              info.repo,
+              info.title.length > 25 ? info.title.slice(0, 22) + '...' : info.title,
               stateIcon(info.state),
               checksIcon(info.checks),
               reviewIcon(info.reviews),
@@ -185,13 +187,14 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
 
       const prTable = new Table({
         head: [
-          chalk.bold('PR'),
+          chalk.bold('#'),
+          chalk.bold('Repo'),
           chalk.bold('Title'),
           chalk.bold('State'),
           chalk.bold('Checks'),
           chalk.bold('Reviews'),
         ],
-        colWidths: [25, 30, 14, 14, 20],
+        colWidths: [8, 20, 28, 14, 14, 20],
         wordWrap: true,
         style: { head: [], border: ['dim'] },
       });
@@ -200,8 +203,9 @@ export async function ticketCommand(notionUrlOrId: string): Promise<void> {
         const info = await getPRInfo(prUrl);
         if (info) {
           prTable.push([
-            formatPRRef(prUrl),
-            info.title.length > 27 ? info.title.slice(0, 24) + '...' : info.title,
+            chalk.cyan(`${info.number}`),
+            info.repo,
+            info.title.length > 25 ? info.title.slice(0, 22) + '...' : info.title,
             stateIcon(info.state),
             checksIcon(info.checks),
             reviewIcon(info.reviews),
