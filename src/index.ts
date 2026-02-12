@@ -172,6 +172,21 @@ program
     }
   });
 
+program
+  .command('open <ticket>')
+  .description('Open a ticket\'s Notion page in the browser')
+  .action(async (ticket: string) => {
+    const { loadSyncedTickets, findTicketByIdOrUrl } = await import('./lib/ticket-store');
+    const { execSync } = await import('child_process');
+    const tickets = loadSyncedTickets();
+    const found = findTicketByIdOrUrl(ticket, tickets);
+    if (!found || !found.url) {
+      console.error(`Ticket not found: ${ticket}`);
+      process.exit(1);
+    }
+    execSync(`open "${found.url}"`, { stdio: 'inherit' });
+  });
+
 // Catch-all: treat unknown commands that look like ticket IDs as `tix ticket <id>`
 program.on('command:*', async (operands: string[]) => {
   const arg = operands[0];
