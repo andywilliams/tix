@@ -36,12 +36,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     '  }',
     ']',
     '',
-    'The "ticketNumber" is from the "New ID" property.',
-    'Exclude tickets with completed statuses (Done, Complete, Completed, Shipped, Released, Closed, Won\'t Do).',
-    'Only include active/in-progress/to-do tickets.',
-    'For githubLinks, extract any GitHub URLs found in the ticket content.',
-    'If a field is unknown, use an empty string or empty array as appropriate.',
-    'Return ONLY the JSON array, nothing else.',
+    'IMPORTANT instructions:',
+    '- Query the database ONCE. All fields (including "New ID") are page properties visible in the query results.',
+    '- "ticketNumber" comes from the "New ID" database property. Do NOT open individual pages to find it.',
+    '- Exclude tickets with completed statuses (Done, Complete, Completed, Shipped, Released, Closed, Won\'t Do).',
+    '- For githubLinks, only use URLs visible in page properties. Do NOT read page content/blocks.',
+    '- If a field is unknown, use an empty string or empty array.',
+    '- Return ONLY the JSON array, nothing else.',
   ].join('\n');
 
   const tmpFile = path.join(os.tmpdir(), `tix-sync-prompt-${Date.now()}.txt`);

@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import { loadConfig, hasNotionApiConfig } from '../lib/config';
 import { createNotionClient, queryMyTickets } from '../lib/notion';
-import { getPRInfo, parsePRUrl } from '../lib/github';
+import { getPRInfo, parsePRUrl, searchPRsByTicketId } from '../lib/github';
 import { loadSyncedTickets, hasSyncedTickets, getSyncTimestamp } from '../lib/ticket-store';
 import { loadStatusSettings, saveStatusSettings } from '../lib/review-config';
 import type { CompletedPeriod, TicketSummary } from '../types';
@@ -139,15 +139,46 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
 
     const { filtered: tickets, hiddenCount } = filterCompletedTickets(allTickets, period);
 
+    // Use cached githubLinks (populated by `tix sync-gh`)
+    const ticketPRComments: Map<string, number> = new Map();
+    const ticketPRCount: Map<string, number> = new Map();
+
+    const ticketsWithPRs = tickets.filter(t => {
+      const prLinks = (t.githubLinks || []).filter((l: string) => parsePRUrl(l));
+      return prLinks.length > 0;
+    });
+
+    if (ticketsWithPRs.length > 0) {
+      process.stdout.write(chalk.dim('Checking PRs for unresolved comments...\n'));
+
+      for (const ticket of ticketsWithPRs) {
+        const prLinks = ticket.githubLinks.filter((l: string) => parsePRUrl(l));
+        ticketPRCount.set(ticket.id, prLinks.length);
+        let totalUnresolved = 0;
+
+        for (const prUrl of prLinks) {
+          const prInfo = await getPRInfo(prUrl);
+          if (prInfo) {
+            totalUnresolved += prInfo.unresolvedComments;
+          }
+        }
+
+        ticketPRComments.set(ticket.id, totalUnresolved);
+      }
+    }
+
+    const hasPRData = ticketPRCount.size > 0;
+
     const table = new Table({
       head: [
         chalk.bold('ID'),
         chalk.bold('Title'),
         chalk.bold('Status'),
         chalk.bold('Priority'),
+        ...(hasPRData ? [chalk.bold('PRs'), chalk.bold('Comments')] : []),
         chalk.bold('Updated'),
       ],
-      colWidths: [12, 32, 16, 14, 12],
+      colWidths: hasPRData ? [12, 28, 16, 14, 6, 10, 12] : [12, 32, 16, 14, 12],
       wordWrap: true,
       style: {
         head: [],
@@ -156,13 +187,27 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
     });
 
     for (const ticket of tickets) {
-      table.push([
+      const prCount = ticketPRCount.get(ticket.id) || 0;
+      const commentCount = ticketPRComments.get(ticket.id);
+      const titleMax = hasPRData ? 25 : 29;
+      const titleTrunc = hasPRData ? 22 : 26;
+
+      const row = [
         ticket.ticketNumber || '—',
-        ticket.title.length > 29 ? ticket.title.slice(0, 26) + '...' : ticket.title,
+        ticket.title.length > titleMax ? ticket.title.slice(0, titleTrunc) + '...' : ticket.title,
         colorStatus(ticket.status),
         formatPriority(ticket.priority),
-        ticket.lastUpdated,
-      ]);
+      ];
+
+      if (hasPRData) {
+        row.push(
+          prCount === 0 ? chalk.dim('—') : chalk.cyan(`${prCount}`),
+          prCount === 0 ? chalk.dim('—') : formatComments(commentCount ?? 0),
+        );
+      }
+
+      row.push(ticket.lastUpdated);
+      table.push(row);
     }
 
     console.log(table.toString());
@@ -210,7 +255,10 @@ export async function statusCommand(options: { completed?: string } = {}): Promi
   const ticketPRCount: Map<string, number> = new Map();
 
   for (const ticket of tickets) {
-    const prLinks = ticket.githubLinks.filter((l: string) => parsePRUrl(l));
+    let prLinks = ticket.githubLinks.filter((l: string) => parsePRUrl(l));
+    if (prLinks.length === 0 && ticket.ticketNumber && config.githubOrg) {
+      prLinks = searchPRsByTicketId(config.githubOrg, ticket.ticketNumber);
+    }
     if (prLinks.length === 0) continue;
 
     ticketPRCount.set(ticket.id, prLinks.length);
