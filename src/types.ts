@@ -39,3 +39,42 @@ export interface TicketDetail {
   githubLinks: string[];
   prs: PRInfo[];
 }
+
+// Review types (ported from lgtm)
+
+export type Harshness = 'chill' | 'medium' | 'pedantic';
+export type Severity = 'BUG' | 'SECURITY' | 'SUGGESTION' | 'NITPICK';
+export type AIProvider = 'claude' | 'codex';
+
+export interface ReviewComment {
+  file: string;
+  line: number;
+  severity: Severity;
+  title: string;
+  body: string;
+  suggestion?: string;
+}
+
+export interface ReviewResult {
+  summary: string;
+  comments: ReviewComment[];
+}
+
+export interface PRDetails {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  baseRef: string;
+  headRef: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+}
+
+export interface ReviewSettings {
+  ai: AIProvider;
+  harshness: Harshness;
+  fullContext: boolean;
+  usageContext: boolean;
+}
