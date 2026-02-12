@@ -132,6 +132,16 @@ tix sync-gh     # find PRs for each ticket (fast, do often)
 tix status      # view everything
 ```
 
+### `tix open <ticket>`
+
+Open a ticket's Notion page in the browser:
+
+```bash
+tix open tn-4266
+```
+
+Looks up the ticket in your local cache and opens the Notion URL. Case-insensitive — `TN-4266`, `tn-4266`, etc. all work.
+
 ### `tix ticket <notion-url-or-id>`
 
 Deep-dive into a single ticket. Shows full details and fetches GitHub PR status:
