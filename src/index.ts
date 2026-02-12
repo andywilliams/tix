@@ -121,9 +121,11 @@ program
 program
   .command('sync')
   .description('Sync tickets from Notion via Claude CLI (no API key needed)')
-  .action(async () => {
+  .option('--verbose', 'Show detailed logs for debugging')
+  .option('--timeout <seconds>', 'Timeout in seconds (default: 300)')
+  .action(async (options: any) => {
     try {
-      await syncCommand();
+      await syncCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
