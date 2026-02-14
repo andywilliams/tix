@@ -363,6 +363,65 @@ tix bust "api#42" --dry-run --verbose --ai claude
 
 Edit review settings interactively with `tix review-config`, or pass CLI flags to `tix review` for one-off overrides. The `status.completedPeriod` is set automatically when you use `tix status --completed <period>`.
 
+### `tix cron-setup`
+
+Interactive setup wizard for the automated kanban task processing system:
+
+```bash
+tix cron-setup
+```
+
+Sets up cron jobs that automatically:
+- Monitor DWLF kanban board for AI-assigned tasks
+- Pick up highest priority backlog tasks
+- Execute tasks using Claude CLI
+- Add progress comments and links to kanban tasks
+- Track execution history and manage concurrent sessions
+
+### `tix cron <action>`
+
+Manage cron jobs for automated task processing:
+
+```bash
+# List all cron jobs
+tix cron list
+
+# Add a new cron job (30 min intervals, max 1 concurrent)
+tix cron add "Kanban Worker" "*/30 * * * *" 1
+
+# Enable/disable jobs
+tix cron enable <job-id>
+tix cron disable <job-id>
+
+# Remove a job entirely
+tix cron remove <job-id>
+
+# Trigger job immediately
+tix cron trigger <job-id>
+
+# View job execution history
+tix cron runs <job-id>
+
+# Start/stop the cron daemon
+tix cron start
+tix cron stop
+```
+
+**Cron system features:**
+- Configurable intervals (every 10-60 minutes recommended)
+- Concurrent session limits (prevents resource conflicts)
+- Execution history with full logs stored in `~/.tix-kanban/runs/`
+- Automatic task status management (backlog → in-progress → review)
+- Integration with DWLF kanban API for task picking and updates
+
+**Workflow:**
+1. System picks highest priority backlog task assigned to AI
+2. Checks if task already has work done (skips if so)
+3. Moves task to in-progress status
+4. Spawns Claude CLI with full task context
+5. Captures output and updates kanban task with results
+6. Creates PR links and detailed comments automatically
+
 ## Tips
 
 - Use `tix inspect` first to discover your database's property names — they may differ from the defaults
@@ -372,3 +431,5 @@ Edit review settings interactively with `tix review-config`, or pass CLI flags t
 - In sync mode, run `tix sync` occasionally to refresh tickets from Notion, then `tix sync-gh` to quickly find associated PRs
 - Sync mode works with any Claude MCP setup that has Notion access — no need to create a dedicated Notion API integration
 - Use `tix tn-123` as a shorthand for `tix ticket tn-123` — any argument matching a ticket ID pattern is automatically treated as a ticket lookup
+- The cron system works best with intervals of 20-30 minutes to avoid overwhelming the API
+- Set maxConcurrent to 1 for single-threaded task processing, or 2-3 for parallel work if your system can handle it

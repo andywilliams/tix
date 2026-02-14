@@ -12,6 +12,8 @@ import { reviewConfigCommand } from './commands/review-config';
 import { syncCommand } from './commands/sync';
 import { syncGhCommand } from './commands/sync-gh';
 import { prsCommand } from './commands/prs';
+import { cronCommand } from './commands/cron';
+import { cronSetupCommand } from './commands/cron-setup';
 
 const program = new Command();
 
@@ -205,6 +207,30 @@ program
       process.exit(1);
     }
     execSync(`open "${match.url}"`, { stdio: 'inherit' });
+  });
+
+program
+  .command('cron <action> [args...]')
+  .description('Manage cron jobs for automated kanban task processing')
+  .action(async (action: string, args: string[]) => {
+    try {
+      await cronCommand(action, ...args);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('cron-setup')
+  .description('Interactive setup for kanban cron worker system')
+  .action(async () => {
+    try {
+      await cronSetupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
   });
 
 // Catch-all: treat unknown commands that look like ticket IDs as `tix ticket <id>`
