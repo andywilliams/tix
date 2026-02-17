@@ -363,6 +363,80 @@ tix bust "api#42" --dry-run --verbose --ai claude
 
 Edit review settings interactively with `tix review-config`, or pass CLI flags to `tix review` for one-off overrides. The `status.completedPeriod` is set automatically when you use `tix status --completed <period>`.
 
+### `tix standup`
+
+Auto-generate daily standups from git and GitHub activity:
+
+```bash
+# Generate today's standup
+tix standup
+
+# Save the standup locally
+tix standup --save
+
+# View this week's saved standups
+tix standup --week
+
+# Post directly to Slack
+tix standup --slack
+```
+
+Scans your configured repos for:
+- Git commits from the last 24 hours
+- GitHub PRs opened, merged, reviewed, or closed
+- Formats into **Yesterday / Today / Blockers** sections
+
+Saved standups are stored in `~/.tix/standups/`. The `--slack` flag posts to a configured Slack webhook (set up via `tix setup`).
+
+### `tix log`
+
+Quick work log entries for capturing what you're doing between tickets:
+
+```bash
+# Log an entry
+tix log "Investigated auth bug in em-contracts"
+
+# Interactive mode (prompts for entry)
+tix log
+
+# View today's log
+tix log --show
+
+# View last 3 days
+tix log --show --days 3
+
+# View a specific date
+tix log --show --date 2026-02-17
+```
+
+Entries are timestamped and stored in `~/.tix/logs/YYYY-MM-DD.json`. More freeform than tickets — captures the stuff between formal tasks.
+
+### `tix summary`
+
+Generate weekly summaries from multiple sources:
+
+```bash
+# Generate this week's summary
+tix summary
+
+# Save the summary
+tix summary --save
+
+# View past summaries
+tix summary --history
+
+# Summary for a specific week (by start date)
+tix summary --week 2026-02-10
+```
+
+Aggregates data from:
+- Saved standups (`tix standup --save`)
+- Git commits across all configured repos
+- Work log entries (`tix log`)
+- GitHub PR activity (opened/merged/closed)
+
+Generates key accomplishments, repo breakdowns, and next-week focus suggestions. Perfect for sprint retros, 1:1s, and manager updates. Summaries saved to `~/.tix/summaries/`.
+
 ### `tix cron-setup`
 
 Interactive setup wizard for the automated kanban task processing system:
