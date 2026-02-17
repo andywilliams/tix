@@ -6,6 +6,7 @@ import * as os from 'os';
 import { loadConfig } from '../lib/config';
 import { checkGhCli } from '../lib/github';
 import { parsePRUrl } from '../lib/github';
+import { postToSlack, validateSlackWebhook } from '../lib/slack';
 import type { EqConfig } from '../types';
 
 interface StandupEntry {
@@ -348,7 +349,7 @@ function loadWeekHistory(): StandupEntry[] {
 /**
  * Main standup command
  */
-export async function standupCommand(options: { save?: boolean; week?: boolean; hours?: string }): Promise<void> {
+export async function standupCommand(options: { save?: boolean; week?: boolean; hours?: string; slack?: boolean }): Promise<void> {
   try {
     const config = loadConfig();
     
@@ -394,11 +395,33 @@ export async function standupCommand(options: { save?: boolean; week?: boolean; 
       saveStandup(standup);
     }
 
+    // Post to Slack if requested
+    if (options.slack) {
+      if (!config.slackWebhook) {
+        console.log(chalk.red('\n❌ Slack webhook not configured. Run `tix setup slack` first.'));
+        return;
+      }
+
+      if (!validateSlackWebhook(config.slackWebhook)) {
+        console.log(chalk.red('\n❌ Invalid Slack webhook URL. Run `tix setup slack` to reconfigure.'));
+        return;
+      }
+
+      try {
+        console.log(chalk.dim('\n🔄 Posting standup to Slack...'));
+        await postToSlack(config.slackWebhook, standup, config.userName);
+      } catch (err: any) {
+        console.log(chalk.red(`\n❌ Failed to post to Slack: ${err.message}`));
+        console.log(chalk.dim('Try running `tix setup slack` to reconfigure the webhook.'));
+      }
+    }
+
     // Show save hint if not saving
-    if (!options.save && !options.week) {
+    if (!options.save && !options.week && !options.slack) {
       console.log('');
       console.log(chalk.dim('💡 Use --save to persist this standup for history tracking'));
       console.log(chalk.dim('💡 Use --week to view your standup history'));
+      console.log(chalk.dim('💡 Use --slack to post this standup to Slack'));
     }
 
   } catch (err: any) {

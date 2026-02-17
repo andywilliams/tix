@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { setupCommand } from './commands/setup';
+import { setupCommand, setupSlackCommand } from './commands/setup';
 import { statusCommand } from './commands/status';
 import { ticketCommand } from './commands/ticket';
 import { inspectCommand } from './commands/inspect';
@@ -29,6 +29,18 @@ program
   .action(async () => {
     try {
       await setupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('setup-slack')
+  .description('Configure Slack webhook for standup posting')
+  .action(async () => {
+    try {
+      await setupSlackCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
@@ -239,6 +251,7 @@ program
   .description('Generate daily standup from git commits and GitHub activity')
   .option('--save', 'Save standup to local history')
   .option('--week', 'Show standup history for the past week')
+  .option('--slack', 'Post standup to configured Slack webhook')
   .option('--hours <number>', 'Hours to look back for activity (default: 24)')
   .action(async (options: any) => {
     try {

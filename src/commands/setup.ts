@@ -1,6 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { saveConfig, getConfigPath, configExists, extractNotionId } from '../lib/config';
+import { saveConfig, getConfigPath, configExists, extractNotionId, loadConfig } from '../lib/config';
 import { EqConfig } from '../types';
 
 export async function setupCommand(): Promise<void> {
@@ -134,4 +134,57 @@ export async function setupCommand(): Promise<void> {
     }
     console.log(chalk.dim('Run `tix sync` to fetch your tickets via Claude CLI.\n'));
   }
+}
+
+export async function setupSlackCommand(): Promise<void> {
+  console.log(chalk.bold.cyan('\n🔧 tix setup slack\n'));
+  console.log('Configure Slack webhook for standup posting.\n');
+
+  let config: EqConfig;
+  
+  try {
+    config = loadConfig();
+  } catch (err) {
+    console.log(chalk.red('No tix config found. Run `tix setup` first.'));
+    return;
+  }
+
+  if (config.slackWebhook) {
+    console.log(chalk.yellow(`Current webhook: ${config.slackWebhook.substring(0, 50)}...`));
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: 'Slack webhook already configured. Update it?',
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow('Slack setup cancelled.'));
+      return;
+    }
+  }
+
+  const answers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'slackWebhook',
+      message: 'Slack webhook URL:',
+      validate: (input: string) => {
+        if (!input.trim()) return 'Webhook URL is required';
+        if (!input.startsWith('https://hooks.slack.com/')) {
+          return 'Must be a valid Slack webhook URL (starts with https://hooks.slack.com/)';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  config.slackWebhook = answers.slackWebhook.trim();
+  saveConfig(config);
+
+  console.log(chalk.green('\n✅ Slack webhook configured!'));
+  console.log(chalk.dim('\nYou can now run:'));
+  console.log(chalk.dim('  tix standup --slack    — post standup to Slack'));
+  console.log(chalk.dim('  tix standup --save --slack  — save locally and post to Slack\n'));
 }
