@@ -17,6 +17,7 @@ import { cronSetupCommand } from './commands/cron-setup';
 import { standupCommand } from './commands/standup';
 import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
+import { kanbanSyncCommand } from './commands/kanban-sync';
 
 const program = new Command();
 
@@ -171,6 +172,21 @@ program
   .action(async () => {
     try {
       await syncGhCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('kanban-sync')
+  .description('Sync Notion tickets to tix-kanban (requires tix-kanban running)')
+  .option('--base-url <url>', 'tix-kanban API base URL', 'http://localhost:3001/api')
+  .option('--dry-run', 'Preview changes without making them')
+  .option('--verbose', 'Show detailed sync information')
+  .action(async (options: any) => {
+    try {
+      await kanbanSyncCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
