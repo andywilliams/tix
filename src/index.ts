@@ -15,6 +15,8 @@ import { prsCommand } from './commands/prs';
 import { cronCommand } from './commands/cron';
 import { cronSetupCommand } from './commands/cron-setup';
 import { standupCommand } from './commands/standup';
+import { logCommand } from './commands/log';
+import { summaryCommand } from './commands/summary';
 
 const program = new Command();
 
@@ -256,6 +258,37 @@ program
   .action(async (options: any) => {
     try {
       await standupCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('log [message]')
+  .description('Quick work log entries — `tix log "did X"` or interactive mode')
+  .option('--show', 'Show recent log entries instead of adding')
+  .option('--days <number>', 'Number of days to show (default: 1)')
+  .option('--date <date>', 'Show entries for specific date (YYYY-MM-DD)')
+  .action(async (message?: string, options?: any) => {
+    try {
+      await logCommand(message, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('summary')
+  .description('Generate weekly summaries from standups + git + log entries')
+  .option('--week <date>', 'Week to summarize (YYYY-MM-DD, defaults to last week)')
+  .option('--save', 'Save summary to local history')
+  .option('--history', 'Show previous weekly summaries')
+  .option('--weeks <number>', 'Number of weeks to show in history (default: 4)')
+  .action(async (options: any) => {
+    try {
+      await summaryCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
