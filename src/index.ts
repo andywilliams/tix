@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { setupCommand, setupSlackCommand } from './commands/setup';
+import { setupNotionCommand } from './commands/setup-notion';
 import { statusCommand } from './commands/status';
 import { ticketCommand } from './commands/ticket';
 import { inspectCommand } from './commands/inspect';
@@ -44,6 +45,18 @@ program
   .action(async () => {
     try {
       await setupSlackCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('setup-notion')
+  .description('Configure Notion sync for tix-kanban board')
+  .action(async () => {
+    try {
+      await setupNotionCommand();
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
