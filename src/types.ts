@@ -6,6 +6,7 @@ export interface EqConfig {
   notionUserId?: string;
   userName: string;
   githubOrg: string;
+  slackWebhook?: string;
 }
 
 export interface TicketSummary {
