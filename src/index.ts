@@ -14,6 +14,7 @@ import { syncGhCommand } from './commands/sync-gh';
 import { prsCommand } from './commands/prs';
 import { cronCommand } from './commands/cron';
 import { cronSetupCommand } from './commands/cron-setup';
+import { standupCommand } from './commands/standup';
 
 const program = new Command();
 
@@ -227,6 +228,21 @@ program
   .action(async () => {
     try {
       await cronSetupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('standup')
+  .description('Generate daily standup from git commits and GitHub activity')
+  .option('--save', 'Save standup to local history')
+  .option('--week', 'Show standup history for the past week')
+  .option('--hours <number>', 'Hours to look back for activity (default: 24)')
+  .action(async (options: any) => {
+    try {
+      await standupCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
