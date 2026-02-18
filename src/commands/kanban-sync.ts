@@ -170,6 +170,12 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
         if (verbose) console.log(chalk.dim(`⏭️  Unchanged: ${kanbanTask.title}`));
         skipped++;
       }
+
+      // Always sync links for existing tasks (regardless of needsUpdate)
+      if (!dryRun) {
+        const existingLinks = fetchTaskLinks(baseUrl, existing.id!);
+        syncTaskLinks(baseUrl, existing.id!, ticket, ticketId, existingLinks, verbose);
+      }
     } else {
       // Create new task
       if (!dryRun) {
@@ -177,18 +183,8 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
           const createResponse = execSync(`curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d '${JSON.stringify(kanbanTask)}'`, { encoding: 'utf-8' });
           const createdTask = JSON.parse(createResponse);
           
-          // Add GitHub PR links if any
-          if (ticket.githubLinks.length > 0) {
-            for (const prUrl of ticket.githubLinks) {
-              const prNumber = extractPRNumber(prUrl);
-              const linkPayload = {
-                url: prUrl,
-                title: `PR #${prNumber}`,
-                type: 'pr'
-              };
-              execSync(`curl -s -X POST "${baseUrl}/tasks/${createdTask.id}/links" -H "Content-Type: application/json" -d '${JSON.stringify(linkPayload)}'`, { stdio: 'pipe' });
-            }
-          }
+          // Add links (GitHub PRs + Notion)
+          syncTaskLinks(baseUrl, createdTask.id, ticket, ticketId, [], verbose);
           
           console.log(chalk.green(`✨ Created: ${kanbanTask.title}`));
           created++;
@@ -257,6 +253,37 @@ function extractRepoFromLinks(links: string[]): string | undefined {
 function extractPRNumber(prUrl: string): string {
   const match = prUrl.match(/\/pull\/(\d+)/);
   return match ? match[1] : 'Unknown';
+}
+
+function fetchTaskLinks(baseUrl: string, taskId: string): string[] {
+  try {
+    const response = execSync(`curl -s "${baseUrl}/tasks/${taskId}"`, { encoding: 'utf-8' });
+    const task = JSON.parse(response);
+    return (task.links || []).map((l: any) => l.url);
+  } catch {
+    return [];
+  }
+}
+
+function syncTaskLinks(baseUrl: string, taskId: string, ticket: TicketSummary, ticketId: string, existingUrls: string[], verbose: boolean): void {
+  try {
+    // Add Notion link if missing
+    if (!existingUrls.includes(ticket.url)) {
+      const notionLink = { url: ticket.url, title: ticketId || 'Notion ticket', type: 'notion' };
+      execSync(`curl -s -X POST "${baseUrl}/tasks/${taskId}/links" -H "Content-Type: application/json" -d '${JSON.stringify(notionLink)}'`, { stdio: 'pipe' });
+    }
+
+    // Add GitHub PR links if missing
+    for (const prUrl of ticket.githubLinks) {
+      if (!existingUrls.includes(prUrl)) {
+        const prNumber = extractPRNumber(prUrl);
+        const prLink = { url: prUrl, title: `PR #${prNumber}`, type: 'pr' };
+        execSync(`curl -s -X POST "${baseUrl}/tasks/${taskId}/links" -H "Content-Type: application/json" -d '${JSON.stringify(prLink)}'`, { stdio: 'pipe' });
+      }
+    }
+  } catch (err) {
+    if (verbose) console.error(chalk.dim(`Failed to sync links for ${taskId}`));
+  }
 }
 
 // Fetch all user tickets using tix's existing Notion integration
