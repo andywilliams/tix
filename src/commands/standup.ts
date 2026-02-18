@@ -7,6 +7,7 @@ import { loadConfig } from '../lib/config';
 import { checkGhCli } from '../lib/github';
 import { parsePRUrl } from '../lib/github';
 import { postToSlack, validateSlackWebhook } from '../lib/slack';
+import { getLogEntriesForDateRange } from '../commands/log.js';
 import type { EqConfig } from '../types';
 
 interface StandupEntry {
@@ -219,6 +220,13 @@ function generateStandup(commits: CommitInfo[], prs: PRActivity[], issues: Issue
   const yesterday: string[] = [];
   const todayItems: string[] = [];
   const blockers: string[] = [];
+
+  // Process log entries first
+  const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const logEntries = getLogEntriesForDateRange(yesterdayDate, today);
+  logEntries.forEach(entry => {
+    yesterday.push(`📝 ${entry.entry}`);
+  });
 
   // Process commits
   commits.forEach(commit => {
