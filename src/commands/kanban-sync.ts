@@ -20,6 +20,7 @@ interface KanbanTask {
   assignee?: string;
   repo?: string;
   tags: string[];
+  updatedAt?: string;
 }
 
 const STATUS_MAPPING: Record<string, string> = {
@@ -146,28 +147,47 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
     };
 
     if (existing) {
-      // Update existing task if status or priority changed
-      const needsUpdate = 
-        existing.status !== kanbanTask.status ||
-        existing.priority !== kanbanTask.priority ||
-        !existing.description?.includes(ticket.url);
+      // Compare timestamps to determine which source is more recent
+      const notionUpdatedAt = ticket.lastUpdated ? new Date(ticket.lastUpdated).getTime() : 0;
+      const kanbanUpdatedAt = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      const notionIsNewer = notionUpdatedAt > kanbanUpdatedAt;
+
+      // Only update status/priority if Notion is the more recent source
+      const statusChanged = existing.status !== kanbanTask.status;
+      const priorityChanged = existing.priority !== kanbanTask.priority;
+      const descriptionNeedsUpdate = !existing.description?.includes(ticket.url);
+
+      const needsUpdate = (notionIsNewer && (statusChanged || priorityChanged)) || descriptionNeedsUpdate;
 
       if (needsUpdate && !dryRun) {
         try {
-          const updatePayload = {
-            status: kanbanTask.status,
-            priority: kanbanTask.priority,
+          const updatePayload: Record<string, any> = {
             description: kanbanTask.description,
           };
-          
+
+          // Only sync status and priority from Notion if it was updated more recently
+          if (notionIsNewer) {
+            if (statusChanged) updatePayload.status = kanbanTask.status;
+            if (priorityChanged) updatePayload.priority = kanbanTask.priority;
+          }
+
           execSync(`curl -s -X PUT "${baseUrl}/tasks/${existing.id}" -H "Content-Type: application/json" -d '${JSON.stringify(updatePayload)}'`, { stdio: 'pipe' });
+          if (verbose && !notionIsNewer && statusChanged) {
+            console.log(chalk.dim(`⏭️  Kept local status for: ${kanbanTask.title} (local is newer)`));
+          }
           console.log(chalk.yellow(`📝 Updated: ${kanbanTask.title}`));
           updated++;
         } catch (err) {
           console.error(chalk.red(`Failed to update task ${existing.id}:`), err);
         }
       } else {
-        if (verbose) console.log(chalk.dim(`⏭️  Unchanged: ${kanbanTask.title}`));
+        if (verbose) {
+          if (statusChanged && !notionIsNewer) {
+            console.log(chalk.dim(`⏭️  Kept local status for: ${kanbanTask.title} (local is newer)`));
+          } else {
+            console.log(chalk.dim(`⏭️  Unchanged: ${kanbanTask.title}`));
+          }
+        }
         skipped++;
       }
 
