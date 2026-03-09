@@ -91,8 +91,8 @@ async function runReminders(dryRun: boolean = false) {
       } else if (slackMatches.length > 0 && !config.slackWebhook) {
         console.log(chalk.dim('  (No Slack webhook configured — run `tix setup-slack` to enable Slack notifications)'));
       }
-    } catch {
-      // Config may not exist; that's fine
+    } catch (err: any) {
+      console.log(chalk.dim(`  (Could not load config for Slack: ${err.message})`));
     }
   }
 }
@@ -293,17 +293,9 @@ async function toggleRule(ruleId: string, enabled: boolean) {
 
   rule.enabled = enabled;
 
-  // Save: built-in rules that have been toggled become user rules (overrides)
-  const userRules = allRules.filter(r => !r.builtIn || r.id === ruleId);
-  if (rule.builtIn) {
-    rule.builtIn = false; // Promote to user rule so the override persists
-  }
-  saveUserRules(userRules.filter(r => !BUILT_IN_RULES.some(b => b.id === r.id && b.enabled === r.enabled)));
-
-  // Actually, simpler approach: save all non-default-state rules
+  // Save only rules that differ from defaults (custom rules or toggled built-ins)
   saveUserRules(allRules.filter(r => {
     const builtIn = BUILT_IN_RULES.find(b => b.id === r.id);
-    // Save if it's custom, or if it's a built-in with changed enabled state
     return !builtIn || builtIn.enabled !== r.enabled;
   }));
 
