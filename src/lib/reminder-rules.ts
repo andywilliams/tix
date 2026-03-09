@@ -215,7 +215,10 @@ function saveHistory(matches: RuleMatch[]): void {
 
 function parseDuration(duration: string): number {
   const match = duration.match(/^(\d+)(h|d|m)$/);
-  if (!match) return 24 * 60 * 60 * 1000; // default 24h
+  if (!match) {
+    console.error(chalk.yellow(`⚠️ Invalid duration "${duration}", defaulting to 24h. Use format: <number><m|h|d> (e.g. 1h, 2d, 30m)`));
+    return 24 * 60 * 60 * 1000;
+  }
   const num = parseInt(match[1], 10);
   switch (match[2]) {
     case 'm': return num * 60 * 1000;
@@ -375,86 +378,23 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
   const matches: RuleMatch[] = [];
 
   for (const rule of rules) {
-    if (rule.target === 'ticket') {
-      for (const ticket of tickets) {
-        const allMatch = rule.conditions.every(c => evaluateTicketCondition(c, ticket));
-        if (!allMatch) continue;
+    try {
+      if (rule.target === 'ticket') {
+        for (const ticket of tickets) {
+          const allMatch = rule.conditions.every(c => evaluateTicketCondition(c, ticket));
+          if (!allMatch) continue;
 
-        const entityId = ticket.ticketNumber || ticket.id;
-        if (isCoolingDown(rule.id, entityId, rule.cooldown, cooldowns)) continue;
-
-        const message = interpolateTicket(rule.action.message, ticket);
-        matches.push({
-          ruleId: rule.id,
-          ruleName: rule.name,
-          entityId,
-          entityTitle: ticket.title,
-          message,
-          url: ticket.url,
-          timestamp: new Date().toISOString(),
-        });
-
-        if (!options.dryRun) {
-          markFired(rule.id, entityId, cooldowns);
-        }
-      }
-    }
-
-    if (rule.target === 'pr') {
-      for (const pr of prs) {
-        const allMatch = rule.conditions.every(c => evaluatePRCondition(c, pr));
-        if (!allMatch) continue;
-
-        const entityId = String(pr.number);
-        if (isCoolingDown(rule.id, entityId, rule.cooldown, cooldowns)) continue;
-
-        const message = interpolatePR(rule.action.message, pr);
-        matches.push({
-          ruleId: rule.id,
-          ruleName: rule.name,
-          entityId,
-          entityTitle: pr.title,
-          message,
-          url: pr.url,
-          timestamp: new Date().toISOString(),
-        });
-
-        if (!options.dryRun) {
-          markFired(rule.id, entityId, cooldowns);
-        }
-      }
-    }
-
-    if (rule.target === 'backlog') {
-      // Backlog rules evaluate aggregate counts
-      const statusCondition = rule.conditions.find(c => c.field === 'status');
-      const countCondition = rule.conditions.find(c => c.field === 'count');
-
-      if (statusCondition && countCondition) {
-        const statusValues = Array.isArray(statusCondition.value)
-          ? statusCondition.value
-          : [String(statusCondition.value)];
-
-        const matchingTickets = tickets.filter(t =>
-          statusValues.some(v => t.status.toLowerCase() === v.toLowerCase())
-        );
-
-        const count = matchingTickets.length;
-        const countMatches = compareValue(count, countCondition.operator, countCondition.value);
-
-        if (countMatches) {
-          const entityId = 'backlog';
+          const entityId = ticket.ticketNumber || ticket.id;
           if (isCoolingDown(rule.id, entityId, rule.cooldown, cooldowns)) continue;
 
-          const message = rule.action.message
-            .replace(/\{count\}/g, String(count));
-
+          const message = interpolateTicket(rule.action.message, ticket);
           matches.push({
             ruleId: rule.id,
             ruleName: rule.name,
             entityId,
-            entityTitle: `${count} backlog items`,
+            entityTitle: ticket.title,
             message,
+            url: ticket.url,
             timestamp: new Date().toISOString(),
           });
 
@@ -463,6 +403,73 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
           }
         }
       }
+
+      if (rule.target === 'pr') {
+        for (const pr of prs) {
+          const allMatch = rule.conditions.every(c => evaluatePRCondition(c, pr));
+          if (!allMatch) continue;
+
+          const entityId = String(pr.number);
+          if (isCoolingDown(rule.id, entityId, rule.cooldown, cooldowns)) continue;
+
+          const message = interpolatePR(rule.action.message, pr);
+          matches.push({
+            ruleId: rule.id,
+            ruleName: rule.name,
+            entityId,
+            entityTitle: pr.title,
+            message,
+            url: pr.url,
+            timestamp: new Date().toISOString(),
+          });
+
+          if (!options.dryRun) {
+            markFired(rule.id, entityId, cooldowns);
+          }
+        }
+      }
+
+      if (rule.target === 'backlog') {
+        // Backlog rules evaluate aggregate counts
+        const statusCondition = rule.conditions.find(c => c.field === 'status');
+        const countCondition = rule.conditions.find(c => c.field === 'count');
+
+        if (statusCondition && countCondition) {
+          const statusValues = Array.isArray(statusCondition.value)
+            ? statusCondition.value
+            : [String(statusCondition.value)];
+
+          const matchingTickets = tickets.filter(t =>
+            statusValues.some(v => t.status.toLowerCase() === v.toLowerCase())
+          );
+
+          const count = matchingTickets.length;
+          const countMatches = compareValue(count, countCondition.operator, countCondition.value);
+
+          if (countMatches) {
+            const entityId = 'backlog';
+            if (isCoolingDown(rule.id, entityId, rule.cooldown, cooldowns)) continue;
+
+            const message = rule.action.message
+              .replace(/\{count\}/g, String(count));
+
+            matches.push({
+              ruleId: rule.id,
+              ruleName: rule.name,
+              entityId,
+              entityTitle: `${count} backlog items`,
+              message,
+              timestamp: new Date().toISOString(),
+            });
+
+            if (!options.dryRun) {
+              markFired(rule.id, entityId, cooldowns);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error(chalk.red(`⚠️ Error evaluating rule "${rule.name}" (${rule.id}): ${err.message}`));
     }
   }
 
@@ -481,7 +488,7 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
 // ─── Slack Notification ───────────────────────────────────────────────────────
 
 export async function sendReminderToSlack(webhookUrl: string, matches: RuleMatch[]): Promise<void> {
-  const { execSync } = await import('child_process');
+  const { execFileSync } = await import('child_process');
 
   const blocks: any[] = [
     {
@@ -505,10 +512,15 @@ export async function sendReminderToSlack(webhookUrl: string, matches: RuleMatch
   });
 
   const payload = JSON.stringify({ blocks });
-  const cmd = `curl -s -X POST -H "Content-type: application/json" --data '${payload.replace(/'/g, "'\"'\"'")}' "${webhookUrl}"`;
 
   try {
-    const result = execSync(cmd, { encoding: 'utf-8', stdio: 'pipe' });
+    const result = execFileSync('curl', [
+      '-s', '-X', 'POST',
+      '-H', 'Content-type: application/json',
+      '--data', payload,
+      webhookUrl,
+    ], { encoding: 'utf-8', stdio: 'pipe', timeout: 15000 });
+
     if (result.trim() === 'ok') {
       console.log(chalk.green(`✅ Sent ${matches.length} reminder(s) to Slack`));
     } else {
