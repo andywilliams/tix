@@ -19,6 +19,7 @@ import { standupCommand } from './commands/standup';
 import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
+import { remindCommand } from './commands/remind';
 
 const program = new Command();
 
@@ -318,6 +319,19 @@ program
   .action(async (options: any) => {
     try {
       await summaryCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('remind <action> [args...]')
+  .description('Smart reminders — rules engine for board state alerts')
+  .allowUnknownOption()
+  .action(async (action: string, args: string[]) => {
+    try {
+      await remindCommand(action, ...args);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
