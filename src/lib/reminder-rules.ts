@@ -32,6 +32,7 @@ export interface ReminderRule {
 }
 
 export interface RuleMatch {
+  id: string;             // Unique short ID for management commands
   ruleId: string;
   ruleName: string;
   entityId: string;       // Ticket number or PR number
@@ -39,7 +40,10 @@ export interface RuleMatch {
   message: string;
   url?: string;
   timestamp: string;
+  snoozedUntil?: string;  // ISO timestamp — if set, reminder is snoozed until this time
 }
+
+export type ReminderStatus = 'active' | 'triggered' | 'snoozed' | 'pending';
 
 interface CooldownState {
   [key: string]: string;  // ruleId:entityId -> last fired ISO timestamp
@@ -51,6 +55,10 @@ const TIX_DIR = path.join(os.homedir(), '.tix');
 const RULES_FILE = path.join(TIX_DIR, 'reminder-rules.json');
 const COOLDOWN_FILE = path.join(TIX_DIR, 'reminder-cooldowns.json');
 const HISTORY_FILE = path.join(TIX_DIR, 'reminder-history.json');
+
+function generateShortId(): string {
+  return Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 5);
+}
 
 function ensureDir() {
   if (!fs.existsSync(TIX_DIR)) {
@@ -389,6 +397,7 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
 
           const message = interpolateTicket(rule.action.message, ticket);
           matches.push({
+            id: generateShortId(),
             ruleId: rule.id,
             ruleName: rule.name,
             entityId,
@@ -414,6 +423,7 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
 
           const message = interpolatePR(rule.action.message, pr);
           matches.push({
+            id: generateShortId(),
             ruleId: rule.id,
             ruleName: rule.name,
             entityId,
@@ -454,6 +464,7 @@ export function evaluateRules(options: { dryRun?: boolean } = {}): RuleMatch[] {
               .replace(/\{count\}/g, String(count));
 
             matches.push({
+              id: generateShortId(),
               ruleId: rule.id,
               ruleName: rule.name,
               entityId,
@@ -539,4 +550,158 @@ export function getHistory(limit: number = 20): RuleMatch[] {
 
 export function clearCooldowns(): void {
   saveCooldowns({});
+}
+
+// ─── Snooze & Reminder Management ────────────────────────────────────────────
+
+const SNOOZE_PRESETS: Record<string, number> = {
+  '1h': 1 * 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+  'tomorrow': 0,    // calculated dynamically
+  'next-week': 0,   // calculated dynamically
+};
+
+export function getSnoozePresets(): string[] {
+  return ['1h', '4h', 'tomorrow', 'next-week'];
+}
+
+function resolveSnoozeUntil(preset: string): Date {
+  const now = new Date();
+  // Normalize: accept "next week" or "next-week"
+  const normalized = preset.replace(/\s+/g, '-').toLowerCase();
+
+  if (normalized === 'tomorrow') {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    return tomorrow;
+  }
+
+  if (normalized === 'next-week') {
+    const nextMon = new Date(now);
+    const dayOfWeek = nextMon.getDay();
+    const daysUntilMon = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+    nextMon.setDate(nextMon.getDate() + daysUntilMon);
+    nextMon.setHours(9, 0, 0, 0);
+    return nextMon;
+  }
+
+  // Duration-based: parse as duration
+  const ms = parseDuration(preset);
+  return new Date(now.getTime() + ms);
+}
+
+export function snoozeReminder(reminderId: string, duration: string): RuleMatch | null {
+  const history = loadHistory();
+  const match = history.find(m => m.id === reminderId);
+  if (!match) return null;
+
+  const snoozeUntil = resolveSnoozeUntil(duration);
+  match.snoozedUntil = snoozeUntil.toISOString();
+  // Reset trigger time to now — snooze effectively restarts the reminder lifecycle
+  match.timestamp = new Date().toISOString();
+
+  // Set cooldown to snooze expiry so the rule engine won't re-trigger until then
+  const cooldowns = loadCooldowns();
+  const key = `${match.ruleId}:${match.entityId}`;
+  cooldowns[key] = snoozeUntil.toISOString();
+  saveCooldowns(cooldowns);
+
+  saveHistory(history);
+  return match;
+}
+
+export function getReminderStatus(match: RuleMatch): ReminderStatus {
+  if (match.snoozedUntil) {
+    const until = new Date(match.snoozedUntil).getTime();
+    if (Date.now() < until) return 'snoozed';
+    // Snooze expired — reminder is pending re-evaluation by the rules engine
+    return 'pending';
+  }
+
+  // Check if the rule:entity pair is still in cooldown (active = recently triggered, not yet re-evaluable)
+  const cooldowns = loadCooldowns();
+  const key = `${match.ruleId}:${match.entityId}`;
+  const lastFired = cooldowns[key];
+  if (lastFired) {
+    const rules = loadRules();
+    const rule = rules.find(r => r.id === match.ruleId);
+    if (rule) {
+      const cooldownMs = parseDuration(rule.cooldown);
+      const elapsed = Date.now() - new Date(lastFired).getTime();
+      if (elapsed < cooldownMs) return 'active';
+    }
+  }
+
+  return 'triggered';
+}
+
+export function getReminder(reminderId: string): RuleMatch | null {
+  const history = loadHistory();
+  return history.find(m => m.id === reminderId) || null;
+}
+
+export function deleteReminder(reminderId: string): RuleMatch | null {
+  const history = loadHistory();
+  const idx = history.findIndex(m => m.id === reminderId);
+  if (idx === -1) return null;
+
+  const [removed] = history.splice(idx, 1);
+  saveHistory(history);
+  return removed;
+}
+
+export interface ListRemindersOptions {
+  status?: ReminderStatus;
+  type?: 'ticket' | 'pr' | 'backlog';
+  mine?: boolean;
+  limit?: number;
+}
+
+export function listReminders(options: ListRemindersOptions = {}): (RuleMatch & { status: ReminderStatus; ruleTarget?: string })[] {
+  const history = loadHistory();
+  const rules = loadRules();
+
+  let results = history.map(m => {
+    const rule = rules.find(r => r.id === m.ruleId);
+    return {
+      ...m,
+      status: getReminderStatus(m),
+      ruleTarget: rule?.target,
+    };
+  });
+
+  // Most recent first
+  results.reverse();
+
+  if (options.status) {
+    results = results.filter(r => r.status === options.status);
+  }
+
+  if (options.type) {
+    results = results.filter(r => r.ruleTarget === options.type);
+  }
+
+  if (options.mine) {
+    // Filter to reminders for entities owned by the current user
+    const tickets = loadSyncedTickets();
+    const prs = loadCachedPRs();
+    let config: ReturnType<typeof loadConfig> | null = null;
+    try { config = loadConfig(); } catch { /* no config */ }
+
+    const myTicketNumbers = new Set(tickets.map(t => t.ticketNumber));
+    const myPrNumbers = new Set(
+      prs.filter(p => !config?.githubOrg || p.url.includes(config.githubOrg))
+        .map(p => String(p.number))
+    );
+
+    results = results.filter(r => {
+      if (r.ruleTarget === 'ticket') return myTicketNumbers.has(r.entityId);
+      if (r.ruleTarget === 'pr') return myPrNumbers.has(r.entityId);
+      return true; // backlog reminders are always "mine"
+    });
+  }
+
+  const limit = options.limit || 30;
+  return results.slice(0, limit);
 }

@@ -9,9 +9,16 @@ import {
   getHistory,
   clearCooldowns,
   BUILT_IN_RULES,
+  snoozeReminder,
+  getReminder,
+  deleteReminder,
+  listReminders,
+  getReminderStatus,
+  getSnoozePresets,
   type ReminderRule,
   type RuleCondition,
   type RuleAction,
+  type ReminderStatus,
 } from '../lib/reminder-rules';
 import { loadConfig } from '../lib/config';
 
@@ -45,9 +52,21 @@ export async function remindCommand(action: string, ...args: any[]) {
     case 'templates':
       showTemplates();
       break;
+    case 'snooze':
+      await snoozeCommand(args[0], args.slice(1));
+      break;
+    case 'list':
+      await listCommand(args);
+      break;
+    case 'show':
+      await showCommand(args[0]);
+      break;
+    case 'delete':
+      await deleteCommand(args[0]);
+      break;
     default:
       console.error(`Unknown remind action: ${action}`);
-      console.log('Available actions: run, rules, add, enable, disable, remove, history, reset-cooldowns, templates');
+      console.log('Available actions: run, rules, add, enable, disable, remove, history, reset-cooldowns, templates, snooze, list, show, delete');
       process.exit(1);
   }
 }
@@ -379,5 +398,175 @@ function showTemplates() {
     console.log(`    Conditions: ${rule.conditions.map(c => `${c.field} ${c.operator} ${JSON.stringify(c.value)}`).join(' AND ')}`);
     console.log(`    Message: ${rule.action.message}`);
     console.log();
+  }
+}
+
+// ─── Snooze ──────────────────────────────────────────────────────────────────
+
+async function snoozeCommand(reminderId: string, extraArgs: string[]) {
+  if (!reminderId) {
+    console.error('Usage: tix remind snooze <id> --for <duration>');
+    console.log(`  Presets: ${getSnoozePresets().join(', ')}`);
+    console.log('  Custom: any duration like 2h, 30m, 3d');
+    process.exit(1);
+  }
+
+  // Parse --for flag from args
+  let duration = '1h'; // default
+  const forIdx = extraArgs.indexOf('--for');
+  if (forIdx !== -1 && extraArgs[forIdx + 1]) {
+    duration = extraArgs[forIdx + 1];
+  }
+
+  const match = snoozeReminder(reminderId, duration);
+  if (!match) {
+    console.error(`Reminder not found: ${reminderId}`);
+    console.log('Run `tix remind list` to see available reminders.');
+    process.exit(1);
+  }
+
+  const until = new Date(match.snoozedUntil!);
+  console.log(chalk.blue(`😴 Snoozed "${match.entityTitle}" until ${until.toLocaleString()}`));
+  console.log(chalk.dim(`  Rule: ${match.ruleName} | Entity: ${match.entityId}`));
+}
+
+// ─── List Reminders ──────────────────────────────────────────────────────────
+
+async function listCommand(args: string[]) {
+  const options: { status?: ReminderStatus; type?: 'ticket' | 'pr' | 'backlog'; mine?: boolean } = {};
+
+  // Parse filter flags
+  if (args.includes('--active')) options.status = 'active';
+  if (args.includes('--triggered')) options.status = 'triggered';
+  if (args.includes('--snoozed')) options.status = 'snoozed';
+  if (args.includes('--pending')) options.status = 'pending';
+  if (args.includes('--mine')) options.mine = true;
+
+  const typeIdx = args.indexOf('--type');
+  if (typeIdx !== -1 && args[typeIdx + 1]) {
+    const t = args[typeIdx + 1] as 'ticket' | 'pr' | 'backlog';
+    if (['ticket', 'pr', 'backlog'].includes(t)) {
+      options.type = t;
+    }
+  }
+
+  const reminders = listReminders(options);
+
+  if (reminders.length === 0) {
+    const filterDesc = options.status ? ` (filter: ${options.status})` : '';
+    console.log(`No reminders found${filterDesc}. Run \`tix remind run\` to evaluate rules.`);
+    return;
+  }
+
+  console.log(chalk.bold(`\n⏰ Reminders${options.status ? ` (${options.status})` : ''}\n`));
+
+  const table = new Table({
+    head: [
+      chalk.cyan('ID'),
+      chalk.cyan('Entity'),
+      chalk.cyan('Rule'),
+      chalk.cyan('Status'),
+      chalk.cyan('Triggered'),
+    ],
+    colWidths: [10, 20, 20, 12, 22],
+    wordWrap: true,
+  });
+
+  for (const r of reminders) {
+    const statusLabel = r.status === 'snoozed'
+      ? chalk.blue('snoozed')
+      : r.status === 'active'
+      ? chalk.green('active')
+      : r.status === 'pending'
+      ? chalk.magenta('pending')
+      : chalk.yellow('triggered');
+
+    table.push([
+      r.id,
+      r.entityId,
+      r.ruleName,
+      statusLabel,
+      new Date(r.timestamp).toLocaleString(),
+    ]);
+  }
+
+  console.log(table.toString());
+  console.log(chalk.dim(`\n  Filters: --active, --triggered, --snoozed, --pending, --mine, --type <ticket|pr|backlog>`));
+  console.log(chalk.dim(`  Use \`tix remind show <id>\` for details, \`tix remind snooze <id> --for 1h\` to snooze`));
+}
+
+// ─── Show Reminder ───────────────────────────────────────────────────────────
+
+async function showCommand(reminderId: string) {
+  if (!reminderId) {
+    console.error('Usage: tix remind show <id>');
+    process.exit(1);
+  }
+
+  const match = getReminder(reminderId);
+  if (!match) {
+    console.error(`Reminder not found: ${reminderId}`);
+    process.exit(1);
+  }
+
+  const status = getReminderStatus(match);
+  const rules = loadRules();
+  const rule = rules.find(r => r.id === match.ruleId);
+
+  console.log(chalk.bold(`\n📌 Reminder ${match.id}\n`));
+  console.log(`  Entity:      ${match.entityId} — ${match.entityTitle}`);
+  console.log(`  Rule:        ${match.ruleName} (${match.ruleId})`);
+  console.log(`  Status:      ${formatStatus(status)}`);
+  console.log(`  Triggered:   ${new Date(match.timestamp).toLocaleString()}`);
+
+  if (match.snoozedUntil) {
+    const until = new Date(match.snoozedUntil);
+    const isPast = until.getTime() < Date.now();
+    console.log(`  Snoozed til: ${until.toLocaleString()}${isPast ? chalk.dim(' (expired)') : ''}`);
+  }
+
+  if (match.url) {
+    console.log(`  URL:         ${match.url}`);
+  }
+
+  console.log(`\n  ${chalk.dim('Message:')}`);
+  const consoleMsg = match.message.replace(/\*/g, '').replace(/_/g, '');
+  console.log(`  ${consoleMsg}`);
+
+  if (rule) {
+    console.log(`\n  ${chalk.dim('Rule details:')}`);
+    console.log(`  Target:     ${rule.target}`);
+    console.log(`  Cooldown:   ${rule.cooldown}`);
+    console.log(`  Conditions: ${rule.conditions.map(c => `${c.field} ${c.operator} ${JSON.stringify(c.value)}`).join(' AND ')}`);
+  }
+
+  console.log();
+}
+
+// ─── Delete Reminder ─────────────────────────────────────────────────────────
+
+async function deleteCommand(reminderId: string) {
+  if (!reminderId) {
+    console.error('Usage: tix remind delete <id>');
+    process.exit(1);
+  }
+
+  const removed = deleteReminder(reminderId);
+  if (!removed) {
+    console.error(`Reminder not found: ${reminderId}`);
+    process.exit(1);
+  }
+
+  console.log(chalk.red(`🗑️  Deleted reminder: ${removed.entityId} — ${removed.entityTitle}`));
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatStatus(status: ReminderStatus): string {
+  switch (status) {
+    case 'snoozed': return chalk.blue('😴 snoozed');
+    case 'active': return chalk.green('● active');
+    case 'triggered': return chalk.yellow('⚡ triggered');
+    case 'pending': return chalk.magenta('⏳ pending');
   }
 }
