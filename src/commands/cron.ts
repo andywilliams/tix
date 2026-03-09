@@ -5,6 +5,7 @@ import { homedir } from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
+import { evaluateRules, sendReminderToSlack } from '../lib/reminder-rules';
 
 const execAsync = promisify(exec);
 
@@ -145,8 +146,10 @@ class CronManager {
     console.log(chalk.blue(`Starting cron job: ${job.name}`));
 
     try {
-      // Execute the kanban worker
-      const result = await this.executeKanbanWorker();
+      // Dispatch to the correct task handler
+      const result = job.task === 'reminder-checker'
+        ? await this.executeReminderChecker()
+        : await this.executeKanbanWorker();
       
       run.endTime = new Date().toISOString();
       run.status = 'completed';
@@ -256,6 +259,38 @@ Be thorough and follow best practices.`;
 
     } catch (error: any) {
       throw new Error(`Kanban worker failed: ${error.message}`);
+    }
+  }
+
+  private async executeReminderChecker(): Promise<{
+    stdout: string;
+    taskId?: string;
+    taskTitle?: string;
+  }> {
+    try {
+      const matches = evaluateRules();
+
+      if (matches.length === 0) {
+        return { stdout: 'No reminders triggered' };
+      }
+
+      // Try to send Slack notifications
+      try {
+        const { loadConfig } = await import('../lib/config');
+        const config = loadConfig();
+        const slackMatches = matches; // All matches go to Slack from cron
+        if (config.slackWebhook && slackMatches.length > 0) {
+          await sendReminderToSlack(config.slackWebhook, slackMatches);
+        }
+      } catch {
+        // Config may not exist
+      }
+
+      return {
+        stdout: `Triggered ${matches.length} reminder(s): ${matches.map(m => `${m.ruleName}:${m.entityId}`).join(', ')}`,
+      };
+    } catch (error: any) {
+      throw new Error(`Reminder checker failed: ${error.message}`);
     }
   }
 
@@ -428,7 +463,10 @@ async function addCronJob(name: string, expression: string, maxConcurrent: strin
     process.exit(1);
   }
 
-  const id = await cronManager.addJob(name, expression, 'kanban-worker', {
+  // Detect task type from name
+  const task = name.toLowerCase().includes('reminder') ? 'reminder-checker' : 'kanban-worker';
+
+  const id = await cronManager.addJob(name, expression, task, {
     maxConcurrent: parseInt(maxConcurrent, 10)
   });
   
