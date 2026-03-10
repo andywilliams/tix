@@ -5,8 +5,50 @@ const COMPLETED_STATUSES = new Set([
   'done', 'complete', 'completed', 'shipped', 'released', 'closed', "won't do", 'wont do',
 ]);
 
+export interface NotionTodoBlock {
+  blockId: string;
+  text: string;
+  checked: boolean;
+}
+
 export function createNotionClient(config: EqConfig): Client {
   return new Client({ auth: config.notionApiKey });
+}
+
+/**
+ * Fetch to_do blocks from a Notion page.
+ */
+export async function fetchTodoBlocks(
+  notion: Client,
+  pageId: string
+): Promise<NotionTodoBlock[]> {
+  const todos: NotionTodoBlock[] = [];
+
+  try {
+    const response = await notion.blocks.children.list({
+      block_id: pageId,
+      page_size: 100,
+    });
+
+    for (const block of response.results) {
+      if ((block as any).type === 'to_do') {
+        const toDoBlock = (block as any).to_do;
+        const text = toDoBlock.rich_text
+          ?.map((t: any) => t.plain_text)
+          .join('') || '';
+
+        todos.push({
+          blockId: (block as any).id,
+          text,
+          checked: toDoBlock.checked || false,
+        });
+      }
+    }
+  } catch (err: any) {
+    // Page content might not be accessible, return empty
+  }
+
+  return todos;
 }
 
 /**

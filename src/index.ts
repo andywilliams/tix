@@ -199,6 +199,7 @@ program
   .option('--base-url <url>', 'tix-kanban API base URL', 'http://localhost:3001/api')
   .option('--dry-run', 'Preview changes without making them')
   .option('--verbose', 'Show detailed sync information')
+  .option('--subtasks', 'Also sync Notion to_do checkboxes as child tasks')
   .action(async (options: any) => {
     try {
       await kanbanSyncCommand(options);
