@@ -19,6 +19,8 @@ import { standupCommand } from './commands/standup';
 import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
+import { remindCommand } from './commands/remind';
+import { restoreCommand } from './commands/backup';
 
 const program = new Command();
 
@@ -318,6 +320,67 @@ program
   .action(async (options: any) => {
     try {
       await summaryCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup commands
+const backupCmd = program
+  .command('backup')
+  .description('Manage tix-kanban backups');
+
+backupCmd
+  .command('restore')
+  .description('Restore tix-kanban data from a backup')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Convenience alias: `tix restore` -> `tix backup restore`
+program
+  .command('restore')
+  .description('Restore tix-kanban data from a backup (alias for tix backup restore)')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('remind [message]')
+  .description('Create or list personal reminders (not tied to a specific task)')
+  .option('--at <datetime>', 'Set reminder at specific datetime (e.g., "2026-03-12" or "2026-03-12T14:30")')
+  .option('--in <duration>', 'Set reminder in relative time (e.g., "30m", "2h", "1d")')
+  .option('--list', 'List all reminders')
+  .option('--delete <id>', 'Delete a reminder by ID')
+  .option('--clear', 'Clear triggered reminders')
+  .action(async (message: string | undefined, options: any) => {
+    try {
+      await remindCommand(message, options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
