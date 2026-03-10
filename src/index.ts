@@ -20,7 +20,7 @@ import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
-import { restoreCommand } from './commands/backup';
+import { restoreCommand, backupCommand, showBackupCategories, toggleBackupCategory } from './commands/backup';
 
 const program = new Command();
 
@@ -331,6 +331,30 @@ const backupCmd = program
   .command('backup')
   .description('Manage tix-kanban backups');
 
+// Manual backup command
+backupCmd
+  .command('create')
+  .description('Create a manual backup to the configured backup directory')
+  .action(async () => {
+    try {
+      await backupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Convenience alias: `tix backup` -> `tix backup create`
+backupCmd
+  .action(async () => {
+    try {
+      await backupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
 backupCmd
   .command('restore')
   .description('Restore tix-kanban data from a backup')
@@ -344,6 +368,27 @@ backupCmd
         dryRun: options.dryRun || false,
         fromCommit: options.fromCommit
       });
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup categories subcommand
+backupCmd
+  .command('categories')
+  .description('Show or manage backup categories (which data types to include in backups)')
+  .option('-e, --enable <category>', 'Enable a specific category (e.g., --enable tasks)')
+  .option('-d, --disable <category>', 'Disable a specific category (e.g., --disable chat)')
+  .action(async (options: any) => {
+    try {
+      if (options.enable) {
+        await toggleBackupCategory(options.enable, true);
+      } else if (options.disable) {
+        await toggleBackupCategory(options.disable, false);
+      } else {
+        await showBackupCategories();
+      }
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

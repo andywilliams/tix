@@ -4,15 +4,130 @@ import os from 'os';
 import { exec as execCallback } from 'child_process';
 import { promisify } from 'util';
 import inquirer from 'inquirer';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(execCallback);
 
 const STORAGE_DIR = path.join(os.homedir(), '.tix-kanban');
+const TIX_KANBAN_SETTINGS_FILE = path.join(STORAGE_DIR, 'user-settings.json');
+const TIX_KANBAN_PROJECT_DIR = '/root/clawd/repos/tix-kanban';
 
 interface RestoreOptions {
   backupDir?: string;
   dryRun: boolean;
   fromCommit?: string;
+}
+
+// Default backup categories - all enabled by default
+const DEFAULT_BACKUP_CATEGORIES: Record<string, boolean> = {
+  tasks: true,
+  chat: true,
+  userSettings: true,
+  githubSettings: true,
+  personas: true,
+  agentMemories: true,
+  souls: true,
+  knowledge: true,
+  reports: true,
+  pipelines: true,
+  autoReviewConfig: true,
+  slack: true,
+  reviewStates: true,
+};
+
+/**
+ * Read user settings from the tix-kanban settings file
+ */
+async function getTixKanbanSettings(): Promise<Record<string, any>> {
+  try {
+    const content = await fs.readFile(TIX_KANBAN_SETTINGS_FILE, 'utf8');
+    return JSON.parse(content);
+  } catch (error) {
+    return {};
+  }
+}
+
+/**
+ * Save user settings to the tix-kanban settings file
+ */
+async function saveTixKanbanSettings(settings: Record<string, any>): Promise<void> {
+  await fs.writeFile(TIX_KANBAN_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+}
+
+/**
+ * Get current backup categories with defaults applied
+ */
+async function getBackupCategories(): Promise<Record<string, boolean>> {
+  const settings = await getTixKanbanSettings();
+  const categories = settings.backupCategories || {};
+  return {
+    ...DEFAULT_BACKUP_CATEGORIES,
+    ...categories,
+  };
+}
+
+/**
+ * Update backup categories
+ */
+async function updateBackupCategories(categories: Record<string, boolean>): Promise<Record<string, boolean>> {
+  const settings = await getTixKanbanSettings();
+  
+  if (!settings.backupCategories) {
+    settings.backupCategories = {};
+  }
+  
+  settings.backupCategories = { ...settings.backupCategories, ...categories };
+  await saveTixKanbanSettings(settings);
+  
+  return {
+    ...DEFAULT_BACKUP_CATEGORIES,
+    ...settings.backupCategories,
+  };
+}
+
+/**
+ * Show backup categories status
+ */
+export async function showBackupCategories(): Promise<void> {
+  console.log('\n📋 Backup Categories Status');
+  console.log('============================\n');
+  
+  const categories = await getBackupCategories();
+  
+  for (const [category, enabled] of Object.entries(categories)) {
+    const status = enabled ? '✅ ON' : '❌ OFF';
+    console.log(`  ${status}  ${category}`);
+  }
+  
+  console.log('\n');
+}
+
+/**
+ * Toggle a specific backup category
+ */
+export async function toggleBackupCategory(category: string, enable: boolean): Promise<void> {
+  const validCategories = Object.keys(DEFAULT_BACKUP_CATEGORIES);
+  
+  if (!validCategories.includes(category)) {
+    console.error(`\n❌ Invalid category: ${category}`);
+    console.log(`\nValid categories:`);
+    for (const cat of validCategories) {
+      console.log(`  - ${cat}`);
+    }
+    console.log('');
+    process.exit(1);
+  }
+  
+  const categories = await updateBackupCategories({ [category]: enable });
+  const status = enable ? '✅ enabled' : '❌ disabled';
+  
+  console.log(`\n📋 Backup category '${category}' is now ${status}.`);
+  console.log('\nCurrent status:');
+  for (const [cat, enabled] of Object.entries(categories)) {
+    const catStatus = enabled ? '✅ ON' : '❌ OFF';
+    console.log(`  ${catStatus}  ${cat}`);
+  }
+  console.log('');
 }
 
 /**
@@ -219,5 +334,164 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
     } catch {
       console.warn('\n⚠️  Note: Could not revert to HEAD. You may want to manually run: git checkout HEAD -- .');
     }
+  }
+}
+
+// ============================================================================
+// Manual Backup Command
+// ============================================================================
+
+interface BackupSettings {
+  backupDir?: string;
+}
+
+/**
+ * Read backupDir from tix-kanban user settings
+ */
+async function getBackupDirFromSettings(): Promise<string | null> {
+  try {
+    const content = await fs.readFile(TIX_KANBAN_SETTINGS_FILE, 'utf8');
+    const settings = JSON.parse(content);
+    
+    // Check for backup.backupDir in the settings
+    if (settings.backup?.backupDir) {
+      // Expand ~ to home directory
+      return settings.backup.backupDir.replace(/^~/, os.homedir());
+    }
+    
+    return null;
+  } catch (error) {
+    // File doesn't exist or is invalid
+    return null;
+  }
+}
+
+/**
+ * Copy a directory recursively using fs.cp (Node 16.7+)
+ */
+async function copyDirectory(source: string, destination: string): Promise<{ success: boolean; copied: number; errors: string[] }> {
+  const errors: string[] = [];
+  let copied = 0;
+  
+  try {
+    // Use fs.cp for recursive copy (Node 16.7+)
+    await fs.cp(source, destination, { 
+      recursive: true,
+      preserveTimestamps: true
+    });
+    
+    // Count copied files
+    const files = await getAllFiles(destination);
+    copied = files.length;
+    
+    return { success: errors.length === 0, copied, errors };
+  } catch (err: any) {
+    // Handle specific error codes
+    if (err.code === 'ENOENT') {
+      errors.push(`Source directory not found: ${source}`);
+    } else if (err.code === 'EACCES') {
+      errors.push(`Permission denied: ${err.path}`);
+    } else if (err.code === 'ENOSPC') {
+      errors.push('Disk full - not enough space to complete backup');
+    } else {
+      errors.push(err.message);
+    }
+    return { success: false, copied, errors };
+  }
+}
+
+/**
+ * Check if a directory exists and has content
+ */
+async function directoryExistsAndHasContent(dir: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dir);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Manual backup command - copies user data and project data to configured backup directory
+ */
+export async function backupCommand(): Promise<void> {
+  console.log('\n💾 Tix-Kanban Manual Backup');
+  console.log('===========================\n');
+  
+  // Get backup directory from settings
+  const backupDir = await getBackupDirFromSettings();
+  
+  if (!backupDir) {
+    console.log('⚠️  No backup directory configured.');
+    console.log('\nTo configure a backup directory, run:');
+    console.log('  tix setup');
+    console.log('  (then set backup.backupDir in the tix-kanban settings)\n');
+    console.log('Or manually add the following to ~/.tix-kanban/user-settings.json:');
+    console.log('  {\n    "backup": {\n      "backupDir": "/path/to/your/backup/directory"\n    }\n  }\n');
+    process.exit(0);
+  }
+  
+  console.log(`📁 Backup directory: ${backupDir}\n`);
+  
+  // Verify backup directory is accessible
+  try {
+    await fs.access(backupDir);
+  } catch {
+    console.log(`Creating backup directory: ${backupDir}`);
+    await fs.mkdir(backupDir, { recursive: true });
+  }
+  
+  let success = true;
+  let totalCopied = 0;
+  
+  // Step 1: Copy ~/.tix-kanban to backupDir/.tix-kanban
+  const userDataDest = path.join(backupDir, '.tix-kanban');
+  const userDataExists = await directoryExistsAndHasContent(STORAGE_DIR);
+  
+  if (userDataExists) {
+    console.log('📦 Backing up ~/.tix-kanban...');
+    const result = await copyDirectory(STORAGE_DIR, userDataDest);
+    
+    if (result.success) {
+      console.log(`   ✅ Copied ${result.copied} files to ${userDataDest}`);
+      totalCopied += result.copied;
+    } else {
+      console.error(`   ❌ Failed: ${result.errors.join(', ')}`);
+      success = false;
+    }
+  } else {
+    console.log('📦 ~/.tix-kanban is empty or does not exist, skipping...');
+  }
+  
+  // Step 2: Copy tix-kanban project to backupDir/tix-kanban
+  const projectDest = path.join(backupDir, 'tix-kanban');
+  const projectSource = TIX_KANBAN_PROJECT_DIR;
+  const projectExists = existsSync(projectSource);
+  
+  if (projectExists) {
+    console.log('📦 Backing up tix-kanban project...');
+    const result = await copyDirectory(projectSource, projectDest);
+    
+    if (result.success) {
+      console.log(`   ✅ Copied ${result.copied} files to ${projectDest}`);
+      totalCopied += result.copied;
+    } else {
+      console.error(`   ❌ Failed: ${result.errors.join(', ')}`);
+      success = false;
+    }
+  } else {
+    console.log('📦 tix-kanban project not found, skipping...');
+  }
+  
+  // Summary
+  console.log('\n' + '='.repeat(40));
+  if (success) {
+    console.log(`✅ Backup complete! ${totalCopied} files copied.`);
+    console.log(`   📍 Location: ${backupDir}`);
+  } else {
+    console.log('⚠️  Backup completed with errors.');
+    console.log('   Please check the error messages above.');
+    process.exit(1);
   }
 }
