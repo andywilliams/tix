@@ -168,7 +168,7 @@ function runSqlModeSync(dsId: string, userName: string, timeoutMs: number, verbo
   const assigneeFilter = notionUserId
     ? `"Assignee" LIKE '%${notionUserId}%'`
     : `"Assignee" LIKE '%${userName}%'`;
-  const sqlQuery = `SELECT "New ID", "Title", "Status", "Priority", "Assignee", "Last edited time", "url", "GitHub Pull Requests" FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged') AND ${assigneeFilter}`;
+  const sqlQuery = `SELECT * FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged') AND ${assigneeFilter}`;
 
   if (verbose) console.log(chalk.dim('SQL: ' + sqlQuery));
 
@@ -200,7 +200,7 @@ function runFallbackSync(userName: string, timeoutMs: number, verbose: boolean):
     '',
     '[{"id":"notion-page-id","ticketNumber":"NEW-123","title":"Ticket title","status":"Status value","priority":"Priority value","lastUpdated":"YYYY-MM-DD","url":"https://www.notion.so/...","githubLinks":["https://github.com/..."]}]',
     '',
-    'IMPORTANT: Query the database ONCE. Use "New ID" property for ticketNumber.',
+    'IMPORTANT: Query the database ONCE. Use the ticket ID/number property (may be called "ID", "New ID", "Ticket ID", etc.) for ticketNumber.',
     'Exclude completed statuses (Done, Complete, Shipped, Released, Closed, Won\'t Do).',
     'Return ONLY the JSON array.',
   ].join('\n');
