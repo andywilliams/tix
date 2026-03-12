@@ -2,7 +2,8 @@ export interface BackupConfig {
   enabled: boolean;
   frequency: string;
   path?: string;
-  maxBackups?: number;
+  maxBackups: number;
+  excludePatterns?: string[];
 }
 
 export interface EqConfig {
