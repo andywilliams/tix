@@ -165,10 +165,9 @@ function runViewModeSync(databaseUrl: string, timeoutMs: number, verbose: boolea
 // ---------------------------------------------------------------------------
 
 function runSqlModeSync(dsId: string, userName: string, timeoutMs: number, verbose: boolean, notionUserId?: string): Promise<string> {
-  const assigneeFilter = notionUserId
-    ? `"Assignee" LIKE '%${notionUserId}%'`
-    : `"Assignee" LIKE '%${userName}%'`;
-  const sqlQuery = `SELECT * FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged') AND ${assigneeFilter}`;
+  // Note: assignee filter removed from SQL — column name varies across Notion databases.
+  // Assignee filtering is handled in post-processing by parseTicketsFromSqlResult.
+  const sqlQuery = `SELECT * FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged')`;
 
   if (verbose) console.log(chalk.dim('SQL: ' + sqlQuery));
 
