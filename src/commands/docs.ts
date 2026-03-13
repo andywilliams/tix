@@ -1,6 +1,4 @@
-import inquirer from 'inquirer';
 import fs from 'fs/promises';
-import path from 'path';
 
 const API_BASE = process.env.TIX_KANBAN_API || 'http://localhost:3001/api';
 
