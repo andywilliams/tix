@@ -22,6 +22,7 @@ import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
 import { linkTestCommand } from './commands/link-test';
 import { listCommand } from './commands/list';
+import { docsCommand } from './commands/docs';
 
 const program = new Command();
 
@@ -367,6 +368,19 @@ program
   .action(async (options: any) => {
     try {
       await listCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('docs <action> [args...]')
+  .description('Manage project documentation index (add, list, refresh, search)')
+  .allowUnknownOption()
+  .action(async (action: string, args: string[]) => {
+    try {
+      await docsCommand(action, ...args);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
