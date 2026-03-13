@@ -43,7 +43,7 @@ export async function docsAddCommand(paths: string[]): Promise<void> {
       throw new Error(`Failed to index documents: ${error}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as any;
     console.log(`✅ Indexed ${result.count || paths.length} documents from:`);
     paths.forEach(p => console.log(`   - ${p}`));
   } catch (err: any) {
@@ -64,7 +64,7 @@ export async function docsListCommand(): Promise<void> {
       throw new Error(`Failed to fetch documents: ${error}`);
     }
 
-    const documents: DocumentData[] = await response.json();
+    const documents: DocumentData[] = (await response.json()) as DocumentData[];
     
     if (documents.length === 0) {
       console.log('No documents indexed yet. Use `tix docs add <path>` to add some.');
@@ -99,7 +99,7 @@ export async function docsRefreshCommand(): Promise<void> {
       throw new Error(`Failed to refresh index: ${error}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as any;
     console.log(`✅ Refreshed document index (${result.count || 0} documents)`);
   } catch (err: any) {
     console.error(`Error refreshing index: ${err.message}`);
@@ -129,7 +129,7 @@ export async function docsSearchCommand(query: string, options: any): Promise<vo
       throw new Error(`Search failed: ${error}`);
     }
 
-    const documents: DocumentData[] = await response.json();
+    const documents: DocumentData[] = (await response.json()) as DocumentData[];
     
     if (documents.length === 0) {
       console.log(`No documents found matching "${query}"`);
