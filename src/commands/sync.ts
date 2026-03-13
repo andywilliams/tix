@@ -301,9 +301,11 @@ function parseTicketsFromOutput(output: string): TicketSummary[] | null {
       const fileParsed = JSON.parse(fileContent);
       if (fileParsed && Array.isArray(fileParsed.results)) return rowsToTickets(fileParsed.results);
       if (Array.isArray(fileParsed)) return rowsToTickets(fileParsed);
-      // Try nested results
-      const nested = fileParsed?.data?.results ?? fileParsed?.results ?? fileParsed?.rows;
-      if (Array.isArray(nested)) return rowsToTickets(nested);
+      // Try nested results — check each candidate explicitly so a truthy non-array
+      // value (e.g. an object) doesn't block the next candidate via ??
+      for (const candidate of [fileParsed?.data?.results, fileParsed?.results, fileParsed?.rows]) {
+        if (Array.isArray(candidate)) return rowsToTickets(candidate);
+      }
     } catch { /* file unreadable or unparseable, fall through */ }
   }
 
