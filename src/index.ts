@@ -362,7 +362,7 @@ program
   .option('--limit <number>', 'Maximum number of tickets to return')
   .option('--since <date>', 'Only return tickets updated after this date (YYYY-MM-DD)')
   .option('--status <status>', 'Filter by status')
-  .option('--assignee <email>', 'Filter by assignee email')
+  .option('--assignee <uuid>', 'Filter by assignee Notion user UUID')
   .option('--cursor <token>', 'Pagination cursor for fetching next page')
   .action(async (options: any) => {
     try {

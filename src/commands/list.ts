@@ -130,24 +130,21 @@ async function queryTickets(
 
   // Assignee filter
   // Note: Notion API `people` filter requires a UUID, not an email address.
-  // If an email is passed, we warn on stderr and skip this filter rather than
-  // sending a request that will fail.
+  // Fail hard with JSON error if email is detected.
   if (options.assignee) {
     const isEmail = options.assignee.includes('@');
     if (isEmail) {
-      process.stderr.write(JSON.stringify({
-        error: `--assignee filter requires a Notion user UUID, not an email address ("${options.assignee}"). Resolve the UUID via the Notion API or admin panel.`,
-        code: 'invalid-filter',
-      }) + '\n');
-    } else {
-      filter.and.push({
-        or: [
-          { property: 'Assigned to', people: { contains: options.assignee } },
-          { property: 'Assignee', people: { contains: options.assignee } },
-          { property: 'Assigned', people: { contains: options.assignee } },
-        ],
-      });
+      const error = { error: "Assignee filter requires Notion user UUID, not email", code: "invalid-filter" };
+      console.error(JSON.stringify(error));
+      process.exit(1);
     }
+    filter.and.push({
+      or: [
+        { property: 'Assigned to', people: { contains: options.assignee } },
+        { property: 'Assignee', people: { contains: options.assignee } },
+        { property: 'Assigned', people: { contains: options.assignee } },
+      ],
+    });
   }
 
   const filterObj = filter.and.length > 0 ? filter : undefined;
