@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import { loadConfig, saveConfig } from '../lib/config';
 import { saveSyncedTickets } from '../lib/ticket-store';
 import type { EqConfig, TicketSummary } from '../types';
@@ -172,15 +173,15 @@ function runSqlModeSync(dsId: string, userName: string, timeoutMs: number, verbo
   if (verbose) console.log(chalk.dim('SQL: ' + sqlQuery));
 
   const dsUrl = `collection://${dsId}`;
-  const prompt = `Query Notion database ${dsUrl} with this SQL:\n${sqlQuery}\n\nReturn only the raw JSON result.`;
+  const prompt = `Query Notion database ${dsUrl} with this SQL:\n${sqlQuery}\n\nReturn only the raw JSON result. If the tool saves results to a file, read the file and return its contents directly.`;
 
   return runClaude(
     [
       '--print',
       '--model', 'haiku',
       '--output-format', 'json',
-      '--allowedTools', 'mcp__notion__notion-query-data-sources',
-      '--append-system-prompt', 'Make exactly ONE tool call. Return only the raw result JSON. No commentary.',
+      '--allowedTools', 'mcp__notion__notion-query-data-sources,mcp__notion__notion-fetch',
+      '--append-system-prompt', 'Make exactly ONE tool call. If results are saved to a file, read and return the file contents. Return only the raw result JSON. No commentary.',
       '-p', prompt,
     ],
     timeoutMs,
@@ -290,6 +291,21 @@ function parseTicketsFromOutput(output: string): TicketSummary[] | null {
   // If output looks like a markdown table, try to parse it
   const tableRows = parseMarkdownTable(output);
   if (tableRows) return rowsToTickets(tableRows);
+
+  // Last resort: Claude sometimes saves large MCP results to a file and reports the path.
+  // Detect a file path in the output and try to read + parse it directly.
+  const filePathMatch = output.match(/\/[^\s]+tool-results[^\s]+\.txt/);
+  if (filePathMatch) {
+    try {
+      const fileContent = readFileSync(filePathMatch[0], 'utf-8');
+      const fileParsed = JSON.parse(fileContent);
+      if (fileParsed && Array.isArray(fileParsed.results)) return rowsToTickets(fileParsed.results);
+      if (Array.isArray(fileParsed)) return rowsToTickets(fileParsed);
+      // Try nested results
+      const nested = fileParsed?.data?.results ?? fileParsed?.results ?? fileParsed?.rows;
+      if (Array.isArray(nested)) return rowsToTickets(nested);
+    } catch { /* file unreadable or unparseable, fall through */ }
+  }
 
   return null;
 }
