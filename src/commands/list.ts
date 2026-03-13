@@ -57,7 +57,7 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
 
     if (options.json) {
       // Machine-readable JSON output
-      console.log(JSON.stringify(result));
+      console.log(JSON.stringify(result.tickets));
     } else {
       // Human-readable output
       if (result.tickets.length === 0) {
@@ -108,7 +108,6 @@ async function queryTickets(
   // Track which filters need client-side fallback
   const needsClientSideStatusFilter = !!options.status;
   const needsClientSideAssigneeFilter = !!options.assignee;
-  let needsClientSideSinceFilter = !!options.since;
 
   // Build filter - but skip status/assignee if we suspect they might fail
   // We'll try with filters first, and fall back if needed
@@ -182,7 +181,6 @@ async function queryTickets(
         filter: filterObj, // Only the safe "since" filter
       });
       usedClientSideFilter = true;
-      needsClientSideSinceFilter = false; // Already applied server-side
     } else {
       throw err;
     }
@@ -228,15 +226,6 @@ async function queryTickets(
       }
     }
 
-    // Apply client-side since filter if needed
-    if (usedClientSideFilter && needsClientSideSinceFilter && options.since) {
-      const sinceDate = new Date(options.since);
-      const updatedDate = new Date(lastUpdated);
-      if (updatedDate < sinceDate) {
-        continue; // Skip this ticket
-      }
-    }
-    
     // Extract labels from multi-select
     const labelsProp = props['Labels'] || props['Tags'] || props['label'];
     const labels: string[] = [];
