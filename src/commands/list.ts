@@ -31,24 +31,28 @@ interface QueryResult {
 }
 
 export async function listCommand(options: ListOptions = {}): Promise<void> {
-  const config = loadConfig();
-
-  // Check for Notion API key
-  if (!config.notionApiKey) {
-    const error = { error: "Notion API key not configured. Run 'tix setup' to configure.", code: "auth-failure" };
-    console.error(JSON.stringify(error));
-    process.exit(2);
-  }
-
-  if (!config.notionDatabaseId) {
-    const error = { error: "Notion database ID not configured. Run 'tix setup' to configure.", code: "config-missing" };
-    console.error(JSON.stringify(error));
-    process.exit(1);
-  }
-
-  const notion = createNotionClient(config);
+  let config: any;
+  let notion: Client;
 
   try {
+    // Load config inside try-catch for proper JSON error handling
+    config = loadConfig();
+
+    // Check for Notion API key
+    if (!config.notionApiKey) {
+      const error = { error: "Notion API key not configured. Run 'tix setup' to configure.", code: "auth-failure" };
+      console.error(JSON.stringify(error));
+      process.exit(2);
+    }
+
+    if (!config.notionDatabaseId) {
+      const error = { error: "Notion database ID not configured. Run 'tix setup' to configure.", code: "config-missing" };
+      console.error(JSON.stringify(error));
+      process.exit(1);
+    }
+
+    notion = createNotionClient(config);
+
     const result = await queryTickets(notion, config, options);
 
     if (options.json) {
@@ -101,26 +105,16 @@ async function queryTickets(
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
   const cursor = options.cursor;
 
-  // Build filter
+  // Track which filters need client-side fallback
+  const needsClientSideStatusFilter = !!options.status;
+  const needsClientSideAssigneeFilter = !!options.assignee;
+  let needsClientSideSinceFilter = !!options.since;
+
+  // Build filter - but skip status/assignee if we suspect they might fail
+  // We'll try with filters first, and fall back if needed
   const filter: any = { and: [] };
 
-  // Status filter - find the property dynamically and handle both status and select types
-  if (options.status) {
-    // We'll query without filter first to get property info, then apply status filter if valid
-    // For simplicity, try status type first, then select type
-    filter.and.push({
-      or: [
-        { property: 'Status', status: { equals: options.status } },
-        { property: 'Status', select: { equals: options.status } },
-        { property: 'State', status: { equals: options.status } },
-        { property: 'State', select: { equals: options.status } },
-        { property: 'Stage', status: { equals: options.status } },
-        { property: 'Stage', select: { equals: options.status } },
-      ],
-    });
-  }
-
-  // Since filter (last edited time)
+  // Since filter (last edited time) - this is safe, uses timestamp not property
   if (options.since) {
     filter.and.push({
       timestamp: 'last_edited_time',
@@ -128,47 +122,70 @@ async function queryTickets(
     });
   }
 
-  // Assignee filter
-  // Note: Notion API `people` filter requires a UUID, not an email address.
-  // Fail hard with JSON error if email is detected.
-  if (options.assignee) {
-    const isEmail = options.assignee.includes('@');
-    if (isEmail) {
-      const error = { error: "Assignee filter requires Notion user UUID, not email", code: "invalid-filter" };
-      console.error(JSON.stringify(error));
-      process.exit(1);
-    }
-    filter.and.push({
-      or: [
-        { property: 'Assigned to', people: { contains: options.assignee } },
-        { property: 'Assignee', people: { contains: options.assignee } },
-        { property: 'Assigned', people: { contains: options.assignee } },
-      ],
-    });
-  }
-
   const filterObj = filter.and.length > 0 ? filter : undefined;
 
   let response: any;
+  let usedClientSideFilter = false;
+
   try {
+    // First attempt: try with status/assignee filters if they were provided
+    const filterWithProps: any = { and: [...filter.and] };
+
+    if (options.status) {
+      filterWithProps.and.push({
+        or: [
+          { property: 'Status', status: { equals: options.status } },
+          { property: 'Status', select: { equals: options.status } },
+          { property: 'State', status: { equals: options.status } },
+          { property: 'State', select: { equals: options.status } },
+          { property: 'Stage', status: { equals: options.status } },
+          { property: 'Stage', select: { equals: options.status } },
+        ],
+      });
+    }
+
+    if (options.assignee) {
+      const isEmail = options.assignee.includes('@');
+      if (isEmail) {
+        const error = { error: "Assignee filter requires Notion user UUID, not email", code: "invalid-filter" };
+        console.error(JSON.stringify(error));
+        process.exit(1);
+      }
+      filterWithProps.and.push({
+        or: [
+          { property: 'Assigned to', people: { contains: options.assignee } },
+          { property: 'Assignee', people: { contains: options.assignee } },
+          { property: 'Assigned', people: { contains: options.assignee } },
+        ],
+      });
+    }
+
+    const filterObjWithProps = filterWithProps.and.length > 0 ? filterWithProps : undefined;
+
     response = await notion.databases.query({
       database_id: config.notionDatabaseId,
       page_size: Math.min(limit, 100),
       start_cursor: cursor,
-      filter: filterObj,
+      filter: filterObjWithProps,
     });
   } catch (err: any) {
-    // If filter fails, provide a helpful error message instead of silently dropping filters
+    // If filter fails due to property validation, fall back to client-side filtering
     const errMsg = err.message || String(err);
-    if (errMsg.includes('property') || errMsg.includes('does not exist') || errMsg.includes('invalid filter')) {
-      const filterDesc = [
-        options.status && `--status "${options.status}"`,
-        options.since && `--since "${options.since}"`,
-        options.assignee && `--assignee "${options.assignee}"`,
-      ].filter(Boolean).join(', ');
-      throw new Error(`Filter error: One of the specified filters (${filterDesc || 'none'}) may reference a property that doesn't exist in the database. Original error: ${errMsg}`);
+    const isPropertyError = errMsg.includes('property') || errMsg.includes('does not exist') || errMsg.includes('invalid filter');
+
+    if (isPropertyError) {
+      // Retry without status/assignee filters, apply them client-side
+      response = await notion.databases.query({
+        database_id: config.notionDatabaseId,
+        page_size: Math.min(limit, 100),
+        start_cursor: cursor,
+        filter: filterObj, // Only the safe "since" filter
+      });
+      usedClientSideFilter = true;
+      needsClientSideSinceFilter = false; // Already applied server-side
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   const results = response.results;
@@ -188,6 +205,29 @@ async function queryTickets(
     const assignee = findProperty(props, ['Assigned to', 'Assignee', 'Assigned', 'Owner', 'Person']);
     const ticketNumber = findProperty(props, ['New ID', 'ID', 'Ticket ID', 'Ticket Number']);
     const lastUpdated = (page as any).last_edited_time || '';
+
+    // Apply client-side status filter if needed
+    if (usedClientSideFilter && needsClientSideStatusFilter) {
+      if (!status || status.toLowerCase() !== options.status!.toLowerCase()) {
+        continue; // Skip this ticket
+      }
+    }
+
+    // Apply client-side assignee filter if needed
+    if (usedClientSideFilter && needsClientSideAssigneeFilter) {
+      if (!assignee || !assignee.toLowerCase().includes(options.assignee!.toLowerCase())) {
+        continue; // Skip this ticket
+      }
+    }
+
+    // Apply client-side since filter if needed
+    if (usedClientSideFilter && needsClientSideSinceFilter && options.since) {
+      const sinceDate = new Date(options.since);
+      const updatedDate = new Date(lastUpdated);
+      if (updatedDate < sinceDate) {
+        continue; // Skip this ticket
+      }
+    }
     
     // Extract labels from multi-select
     const labelsProp = props['Labels'] || props['Tags'] || props['label'];
