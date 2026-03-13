@@ -35,6 +35,23 @@ const DEFAULT_BACKUP_CATEGORIES: Record<string, boolean> = {
   reviewStates: true,
 };
 
+// Map each category to the top-level paths it occupies inside STORAGE_DIR
+const CATEGORY_PATHS: Record<string, string[]> = {
+  tasks: ['tasks'],
+  chat: ['chat'],
+  userSettings: ['user-settings.json'],
+  githubSettings: ['github-settings.json'],
+  personas: ['personas'],
+  agentMemories: ['agent-memories'],
+  souls: ['souls'],
+  knowledge: ['knowledge'],
+  reports: ['reports'],
+  pipelines: ['pipelines'],
+  autoReviewConfig: ['auto-review-config.json', 'auto-review'],
+  slack: ['slack'],
+  reviewStates: ['review-states.json', 'review-states'],
+};
+
 /**
  * Read user settings from the tix-kanban settings file
  */
@@ -220,6 +237,13 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       process.exit(1);
     }
     
+    // Validate fromCommit to prevent shell injection
+    const validCommitRef = /^[a-zA-Z0-9._\-\/^~@{}:]+$/;
+    if (!validCommitRef.test(fromCommit)) {
+      console.error(`❌ Error: Invalid commit reference: ${fromCommit}`);
+      process.exit(1);
+    }
+    
     console.log(`📌 Restoring from git commit: ${fromCommit}`);
     
     try {
@@ -382,7 +406,11 @@ async function getBackupDirFromSettings(): Promise<string | null> {
 /**
  * Copy a directory recursively using fs.cp (Node 16.7+)
  */
-async function copyDirectory(source: string, destination: string): Promise<{ success: boolean; copied: number; errors: string[] }> {
+async function copyDirectory(
+  source: string,
+  destination: string,
+  filter?: (src: string, dest: string) => boolean
+): Promise<{ success: boolean; copied: number; errors: string[] }> {
   const errors: string[] = [];
   let copied = 0;
   
@@ -390,7 +418,8 @@ async function copyDirectory(source: string, destination: string): Promise<{ suc
     // Use fs.cp for recursive copy (Node 16.7+)
     await fs.cp(source, destination, { 
       recursive: true,
-      preserveTimestamps: true
+      preserveTimestamps: true,
+      ...(filter && { filter }),
     });
     
     // Count copied files
@@ -458,13 +487,35 @@ export async function backupCommand(): Promise<void> {
   let success = true;
   let totalCopied = 0;
   
+  // Load backup category preferences and build a filter for STORAGE_DIR
+  const categories = await getBackupCategories();
+  const disabledPaths = new Set<string>();
+  for (const [category, enabled] of Object.entries(categories)) {
+    if (!enabled) {
+      for (const rel of (CATEGORY_PATHS[category] || [])) {
+        disabledPaths.add(path.join(STORAGE_DIR, rel));
+      }
+    }
+  }
+  const categoryFilter = disabledPaths.size > 0
+    ? (src: string) => !Array.from(disabledPaths).some(
+        disabled => src === disabled || src.startsWith(disabled + path.sep)
+      )
+    : undefined;
+  
   // Step 1: Copy ~/.tix-kanban to backupDir/.tix-kanban
   const userDataDest = path.join(backupDir, '.tix-kanban');
   const userDataExists = await directoryExistsAndHasContent(STORAGE_DIR);
   
   if (userDataExists) {
+    const disabledCategories = Object.entries(categories)
+      .filter(([, enabled]) => !enabled)
+      .map(([cat]) => cat);
     console.log('📦 Backing up ~/.tix-kanban...');
-    const result = await copyDirectory(STORAGE_DIR, userDataDest);
+    if (disabledCategories.length > 0) {
+      console.log(`   ⏭️  Skipping disabled categories: ${disabledCategories.join(', ')}`);
+    }
+    const result = await copyDirectory(STORAGE_DIR, userDataDest, categoryFilter);
     
     if (result.success) {
       console.log(`   ✅ Copied ${result.copied} files to ${userDataDest}`);
