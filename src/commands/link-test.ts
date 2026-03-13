@@ -50,7 +50,8 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
     const lineRegex = /- `([^`]+)`/g;
     let lineMatch;
     while ((lineMatch = lineRegex.exec(block)) !== null) {
-      existingSuites.push(lineMatch[1]);
+      // Normalize paths from description to match incoming path format
+      existingSuites.push(path.normalize(lineMatch[1].replace(/^\.\//, '')));
     }
   }
 
@@ -74,15 +75,16 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
   // Rebuild the test suite block
   let newBlock = '';
   if (existingSuites.length > 0) {
-    // Preserve existing repo label from description if present, only override if --repo explicitly provided
+    // Preserve existing repo label from description, only override if --repo explicitly provided
     let repoLabel = ' (apix)'; // default
-    if (match) {
+    if (match && !options.repo) {
+      // Extract existing repo label and preserve it if --repo not specified
       const existingLabelMatch = match[1].match(/\*\*Linked Test Suites\s*\(([^)]+)\):\*\*/);
       if (existingLabelMatch) {
         repoLabel = ` (${existingLabelMatch[1]})`;
       }
-    }
-    if (options.repo) {
+    } else if (options.repo) {
+      // Use explicitly provided repo
       repoLabel = ` (${options.repo})`;
     }
     const lines = existingSuites.map(s => `- \`${s}\``).join('\n');
@@ -90,7 +92,7 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
   }
 
   if (match) {
-    // Use function to avoid $-interpolation issues in replacement
+    // Use function replacement to avoid $-interpolation issues with paths containing $
     description = description.replace(markerRegex, () => newBlock);
   } else if (newBlock) {
     description = `${description}\n\n${newBlock}`;
@@ -115,6 +117,9 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
     console.log(`✓ Unlinked test suite "${suitePath}" from task ${taskId}`);
   } else {
     console.log(`✓ Linked test suite "${suitePath}" to task ${taskId}`);
+    if (options.repo) {
+      console.log(`  Repo: ${options.repo}`);
+    }
   }
 }
 
@@ -127,7 +132,10 @@ async function linkTestLocal(taskId: string, suitePath: string, options: LinkTes
       process.exit(1);
     }
     const data = await listRes.json() as any;
-    const suite = data.testSuites?.find((s: any) => s.path === suitePath);
+    // Include repo in the matching logic to handle same path in different repos
+    const suite = data.testSuites?.find((s: any) => 
+      s.path === suitePath && (!options.repo || s.repo === options.repo)
+    );
     if (!suite) {
       console.error(`Test suite "${suitePath}" is not linked to task ${taskId}`);
       process.exit(1);
@@ -149,7 +157,7 @@ async function linkTestLocal(taskId: string, suitePath: string, options: LinkTes
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       path: suitePath,
-      repo: options.repo,
+      repo: options.repo || 'apix', // Store repo explicitly, default to 'apix'
     }),
   });
 
@@ -166,6 +174,9 @@ async function linkTestLocal(taskId: string, suitePath: string, options: LinkTes
   const result = await res.json() as any;
   console.log(`✓ Linked test suite "${suitePath}" to task ${taskId}`);
   console.log(`  Suite ID: ${result.suite.id}`);
+  if (options.repo) {
+    console.log(`  Repo: ${options.repo}`);
+  }
 }
 
 export async function linkTestCommand(taskId: string, suitePath: string, options: LinkTestOptions = {}): Promise<void> {
