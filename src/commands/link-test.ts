@@ -74,7 +74,17 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
   // Rebuild the test suite block
   let newBlock = '';
   if (existingSuites.length > 0) {
-    const repoLabel = options.repo ? ` (${options.repo})` : ' (apix)';
+    // Preserve existing repo label from description if present, only override if --repo explicitly provided
+    let repoLabel = ' (apix)'; // default
+    if (match) {
+      const existingLabelMatch = match[1].match(/\*\*Linked Test Suites\s*\(([^)]+)\):\*\*/);
+      if (existingLabelMatch) {
+        repoLabel = ` (${existingLabelMatch[1]})`;
+      }
+    }
+    if (options.repo) {
+      repoLabel = ` (${options.repo})`;
+    }
     const lines = existingSuites.map(s => `- \`${s}\``).join('\n');
     newBlock = `${testSuiteMarker}\n\n**Linked Test Suites${repoLabel}:**\n${lines}\n\n${testSuiteEndMarker}`;
   }
