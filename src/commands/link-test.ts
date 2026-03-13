@@ -1,5 +1,6 @@
 import { existsSync } from 'fs';
-import { resolve, relative } from 'path';
+import path from 'path';
+import { resolve } from 'path';
 
 const DWLF_API_BASE = 'https://api.dwlf.co.uk/v2';
 const TIX_KANBAN_API_BASE = process.env.TIX_KANBAN_URL || 'http://localhost:3001/api';
@@ -158,6 +159,9 @@ async function linkTestLocal(taskId: string, suitePath: string, options: LinkTes
 }
 
 export async function linkTestCommand(taskId: string, suitePath: string, options: LinkTestOptions = {}): Promise<void> {
+  // Normalize suitePath to prevent match failures (e.g., ./tests/auth vs tests/auth)
+  suitePath = path.normalize(suitePath.replace(/^\.\//, ''));
+
   // Validate the test file exists (if it's a local path)
   if (!suitePath.startsWith('http') && !options.unlink) {
     const resolved = resolve(suitePath);
