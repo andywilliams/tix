@@ -215,7 +215,15 @@ async function queryTickets(
 
     // Apply client-side assignee filter if needed
     if (usedClientSideFilter && needsClientSideAssigneeFilter) {
-      if (!assignee || !assignee.toLowerCase().includes(options.assignee!.toLowerCase())) {
+      // Need to check both display name AND person IDs since assignee filter accepts UUID but extractPropertyValue returns names
+      const assigneeProp = props['Assigned to'] || props['Assignee'] || props['Assigned'] || props['Owner'] || props['Person'];
+      const people = assigneeProp?.people || [];
+      const filterValue = options.assignee!.toLowerCase();
+      
+      const matchesName = assignee && assignee.toLowerCase().includes(filterValue);
+      const matchesId = people.some((p: any) => p.id && p.id.toLowerCase().includes(filterValue));
+      
+      if (!assignee || (!matchesName && !matchesId)) {
         continue; // Skip this ticket
       }
     }
