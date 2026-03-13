@@ -34,14 +34,15 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
   try {
     // Load config inside try-catch for proper JSON error handling
     const config = loadConfig();
-    const notion: Client = createNotionClient(config);
 
-    // Check for Notion API key
+    // Check for Notion API key BEFORE creating client
     if (!config.notionApiKey) {
       const error = { error: "Notion API key not configured. Run 'tix setup' to configure.", code: "auth-failure" };
       console.error(JSON.stringify(error));
       process.exit(2);
     }
+
+    const notion: Client = createNotionClient(config);
 
     if (!config.notionDatabaseId) {
       const error = { error: "Notion database ID not configured. Run 'tix setup' to configure.", code: "config-missing" };
