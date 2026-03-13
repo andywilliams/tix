@@ -73,12 +73,14 @@ async function linkTestDwlf(taskId: string, suitePath: string, options: LinkTest
   // Rebuild the test suite block
   let newBlock = '';
   if (existingSuites.length > 0) {
+    const repoLabel = options.repo ? ` (${options.repo})` : ' (apix)';
     const lines = existingSuites.map(s => `- \`${s}\``).join('\n');
-    newBlock = `${testSuiteMarker}\n\n**Linked Test Suites (apix):**\n${lines}\n\n${testSuiteEndMarker}`;
+    newBlock = `${testSuiteMarker}\n\n**Linked Test Suites${repoLabel}:**\n${lines}\n\n${testSuiteEndMarker}`;
   }
 
   if (match) {
-    description = description.replace(markerRegex, newBlock);
+    // Use function to avoid $-interpolation issues in replacement
+    description = description.replace(markerRegex, () => newBlock);
   } else if (newBlock) {
     description = `${description}\n\n${newBlock}`;
   }
