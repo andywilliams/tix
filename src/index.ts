@@ -20,6 +20,7 @@ import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
+import { linkTestCommand } from './commands/link-test';
 
 const program = new Command();
 
@@ -332,6 +333,21 @@ program
   .action(async (action: string, args: string[]) => {
     try {
       await remindCommand(action, ...args);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('link-test <taskId> <suitePath>')
+  .description('Link an apix test suite to a kanban task as acceptance criteria')
+  .option('--repo <owner/repo>', 'GitHub repo for the test suite')
+  .option('--unlink', 'Remove the test suite link instead of adding it')
+  .option('--backend <backend>', 'Backend to use: dwlf (default) or local', 'dwlf')
+  .action(async (taskId: string, suitePath: string, options: any) => {
+    try {
+      await linkTestCommand(taskId, suitePath, options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
