@@ -155,7 +155,6 @@ export async function docsSearchCommand(query: string, options: any): Promise<vo
  * Main docs command dispatcher
  */
 export async function docsCommand(action: string, ...args: string[]): Promise<void> {
-  const [firstArg, ...restArgs] = args;
 
   switch (action) {
     case 'add':
