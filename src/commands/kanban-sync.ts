@@ -1,14 +1,15 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { loadConfig } from '../lib/config';
-import { loadSyncedTickets } from '../lib/ticket-store';
-import { queryMyTickets, createNotionClient } from '../lib/notion';
+import { loadSyncedTickets, loadSubtaskSyncState, saveSubtaskSyncState, SubtaskSyncState } from '../lib/ticket-store';
+import { queryMyTickets, createNotionClient, fetchTodoBlocks, NotionTodoBlock } from '../lib/notion';
 import type { EqConfig, TicketSummary, TicketDetail } from '../types';
 
 interface KanbanSyncOptions {
   baseUrl?: string;
   dryRun?: boolean;
   verbose?: boolean;
+  subtasks?: boolean;
 }
 
 interface KanbanTask {
@@ -107,16 +108,20 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
   }
 
   // Step 3: Get existing kanban tasks to avoid duplicates
+  // Note: we try to fetch even in dry-run so subtask sync can find parent task IDs for preview,
+  // but we gracefully continue with an empty list if the server is offline during dry-run.
   let existingTasks: KanbanTask[] = [];
-  if (!dryRun) {
-    try {
-      const response = execSync(`curl -s "${baseUrl}/tasks"`, { encoding: 'utf-8' });
-      const data = JSON.parse(response);
-      existingTasks = data.tasks || [];
-      if (verbose) {
-        console.log(chalk.dim(`Found ${existingTasks.length} existing kanban tasks`));
-      }
-    } catch (err) {
+  try {
+    const response = execSync(`curl -s "${baseUrl}/tasks"`, { encoding: 'utf-8' });
+    const data = JSON.parse(response);
+    existingTasks = data.tasks || [];
+    if (verbose) {
+      console.log(chalk.dim(`Found ${existingTasks.length} existing kanban tasks`));
+    }
+  } catch (err) {
+    if (dryRun) {
+      if (verbose) console.log(chalk.dim('Could not reach kanban server — dry-run will continue with empty task list'));
+    } else {
       console.error(chalk.red('Failed to fetch existing kanban tasks:'), err);
       process.exit(1);
     }
@@ -203,6 +208,9 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
           const createResponse = execSync(`curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d '${JSON.stringify(kanbanTask)}'`, { encoding: 'utf-8' });
           const createdTask = JSON.parse(createResponse);
           
+          // Add the newly created task to existingTasks so subtask sync can find it
+          existingTasks.push({ ...kanbanTask, id: createdTask.id });
+
           // Add links (GitHub PRs + Notion)
           syncTaskLinks(baseUrl, createdTask.id, ticket, ticketId, [], verbose);
           
@@ -216,6 +224,51 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
         created++;
       }
     }
+  }
+
+  // Subtask sync if --subtasks flag is set
+  if (options.subtasks && config.notionApiKey) {
+    console.log(chalk.bold.cyan('\n🔗 Syncing Notion subtasks...\n'));
+
+    const syncState = loadSubtaskSyncState();
+    const notion = createNotionClient(config);
+    let totalSubtasksCreated = 0;
+    let totalSubtasksSkipped = 0;
+
+    for (const ticket of tickets) {
+      // Find the kanban task ID for this ticket
+      const kanbanTask = existingTasks.find(task =>
+        (task.title && task.title.includes(ticket.ticketNumber || ticket.id)) ||
+        (task.description && task.description.includes(ticket.url))
+      );
+
+      if (!kanbanTask?.id) continue;
+
+      const result = await syncSubtasks(
+        baseUrl,
+        notion,
+        kanbanTask.id,
+        ticket.id, // Notion page ID
+        kanbanTask.priority || 100,
+        config.userName,
+        syncState,
+        verbose,
+        dryRun
+      );
+
+      totalSubtasksCreated += result.created;
+      totalSubtasksSkipped += result.skipped;
+    }
+
+    // Save sync state
+    if (!dryRun) {
+      syncState.lastSync = new Date().toISOString();
+      saveSubtaskSyncState(syncState);
+    }
+
+    console.log(chalk.bold.green(`\n📊 Subtask sync completed:`));
+    console.log(chalk.green(`  ✨ Created: ${totalSubtasksCreated} subtasks`));
+    console.log(chalk.dim(`  ⏭️  Skipped: ${totalSubtasksSkipped} subtasks`));
   }
 
   // Summary
@@ -304,6 +357,75 @@ function syncTaskLinks(baseUrl: string, taskId: string, ticket: TicketSummary, t
   } catch (err) {
     if (verbose) console.error(chalk.dim(`Failed to sync links for ${taskId}`));
   }
+}
+
+async function syncSubtasks(
+  baseUrl: string,
+  notion: any,
+  parentTaskId: string,
+  notionPageId: string,
+  parentPriority: number,
+  assignee: string,
+  syncState: SubtaskSyncState,
+  verbose: boolean,
+  dryRun: boolean
+): Promise<{ created: number; skipped: number }> {
+  let created = 0;
+  let skipped = 0;
+
+  const todos = await fetchTodoBlocks(notion, notionPageId);
+
+  for (const todo of todos) {
+    if (todo.checked) {
+      // Skip completed subtasks
+      skipped++;
+      continue;
+    }
+
+    const syncKey = `notion-${notionPageId}-${todo.blockId}`;
+
+    if (syncState.synced[syncKey]) {
+      // Already synced
+      if (verbose) console.log(chalk.dim(`  ⏭️ Subtask already synced: ${todo.text.substring(0, 50)}`));
+      skipped++;
+      continue;
+    }
+
+    if (dryRun) {
+      console.log(chalk.blue(`[DRY RUN] Would create subtask: ${todo.text.substring(0, 60)}`));
+      created++;
+      continue;
+    }
+
+    // Create new subtask ticket
+    const subtaskData = {
+      title: todo.text,
+      description: `Synced from Notion checkbox (block ${todo.blockId})`,
+      status: 'backlog',
+      priority: Math.max(parentPriority - 50, 10), // Slightly lower priority than parent
+      assignee,
+      parentTaskId,
+      tags: ['notion-subtask'],
+    };
+
+    try {
+      const response = execSync(
+        `curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d @-`,
+        { encoding: 'utf-8', input: JSON.stringify(subtaskData) }
+      );
+      const createdTask = JSON.parse(response);
+
+      // Record in sync state
+      syncState.synced[syncKey] = createdTask.id;
+
+      console.log(chalk.green(`    ✨ Subtask: ${todo.text.substring(0, 60)}`));
+      created++;
+    } catch (err) {
+      console.error(chalk.red(`    ❌ Failed to create subtask: ${todo.text.substring(0, 50)}`));
+    }
+  }
+
+  return { created, skipped };
 }
 
 // Fetch all user tickets using tix's existing Notion integration

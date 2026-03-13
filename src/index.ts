@@ -20,6 +20,7 @@ import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
+import { restoreCommand, backupCommand, showBackupCategories, toggleBackupCategory } from './commands/backup';
 import { linkTestCommand } from './commands/link-test';
 
 const program = new Command();
@@ -199,6 +200,7 @@ program
   .option('--base-url <url>', 'tix-kanban API base URL', 'http://localhost:3001/api')
   .option('--dry-run', 'Preview changes without making them')
   .option('--verbose', 'Show detailed sync information')
+  .option('--subtasks', 'Also sync Notion to_do checkboxes as child tasks')
   .action(async (options: any) => {
     try {
       await kanbanSyncCommand(options);
@@ -320,6 +322,95 @@ program
   .action(async (options: any) => {
     try {
       await summaryCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup commands
+const backupCmd = program
+  .command('backup')
+  .description('Manage tix-kanban backups');
+
+// Manual backup command
+backupCmd
+  .command('create')
+  .description('Create a manual backup to the configured backup directory')
+  .action(async () => {
+    try {
+      await backupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Convenience alias: `tix backup` -> `tix backup create`
+backupCmd
+  .action(async () => {
+    try {
+      await backupCommand();
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+backupCmd
+  .command('restore')
+  .description('Restore tix-kanban data from a backup')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup categories subcommand
+backupCmd
+  .command('categories')
+  .description('Show or manage backup categories (which data types to include in backups)')
+  .option('-e, --enable <category>', 'Enable a specific category (e.g., --enable tasks)')
+  .option('-d, --disable <category>', 'Disable a specific category (e.g., --disable chat)')
+  .action(async (options: any) => {
+    try {
+      if (options.enable) {
+        await toggleBackupCategory(options.enable, true);
+      } else if (options.disable) {
+        await toggleBackupCategory(options.disable, false);
+      } else {
+        await showBackupCategories();
+      }
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Convenience alias: `tix restore` -> `tix backup restore`
+program
+  .command('restore')
+  .description('Restore tix-kanban data from a backup (alias for tix backup restore)')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

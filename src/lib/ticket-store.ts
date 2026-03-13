@@ -102,3 +102,36 @@ export function getSyncTimestamp(): Date | null {
     return null;
   }
 }
+
+// ============ Subtask Sync State ============
+
+const SUBTASK_SYNC_FILE = path.join(TIX_DIR, 'subtask-sync.json');
+
+export interface SubtaskSyncState {
+  // Maps "notion-{pageId}-{blockId}" -> tix-kanban taskId
+  synced: Record<string, string>;
+  lastSync?: string;
+}
+
+export function loadSubtaskSyncState(): SubtaskSyncState {
+  if (!fs.existsSync(SUBTASK_SYNC_FILE)) {
+    return { synced: {} };
+  }
+  try {
+    const raw = fs.readFileSync(SUBTASK_SYNC_FILE, 'utf-8');
+    return JSON.parse(raw) as SubtaskSyncState;
+  } catch {
+    return { synced: {} };
+  }
+}
+
+function ensureTixDir(): void {
+  if (!fs.existsSync(TIX_DIR)) {
+    fs.mkdirSync(TIX_DIR, { recursive: true });
+  }
+}
+
+export function saveSubtaskSyncState(state: SubtaskSyncState): void {
+  ensureTixDir();
+  fs.writeFileSync(SUBTASK_SYNC_FILE, JSON.stringify(state, null, 2) + '\n');
+}
