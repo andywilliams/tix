@@ -171,11 +171,15 @@ export async function docsCommand(action: string, ...args: string[]): Promise<vo
       break;
     
     case 'search':
-      // Check for --limit option
-      const limitIndex = restArgs.indexOf('--limit');
-      const limit = limitIndex !== -1 ? parseInt(restArgs[limitIndex + 1]) : 5;
-      const query = limitIndex !== -1 
-        ? [firstArg, ...restArgs.slice(0, limitIndex)].join(' ')
+      // Check for --limit option in full args array
+      const limitIndex = args.indexOf('--limit');
+      const limit = limitIndex !== -1 && args[limitIndex + 1]
+        ? parseInt(args[limitIndex + 1])
+        : 5;
+      
+      // Extract query: all args except --limit and its value
+      const query = limitIndex !== -1
+        ? args.filter((_, i) => i !== limitIndex && i !== limitIndex + 1).join(' ')
         : args.join(' ');
       
       await docsSearchCommand(query, { limit });
