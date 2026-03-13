@@ -21,6 +21,7 @@ import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
 import { restoreCommand, backupCommand, showBackupCategories, toggleBackupCategory } from './commands/backup';
+import { linkTestCommand } from './commands/link-test';
 
 const program = new Command();
 
@@ -417,16 +418,27 @@ program
   });
 
 program
-  .command('remind [message]')
-  .description('Create or list personal reminders (not tied to a specific task)')
-  .option('--at <datetime>', 'Set reminder at specific datetime (e.g., "2026-03-12" or "2026-03-12T14:30")')
-  .option('--in <duration>', 'Set reminder in relative time (e.g., "30m", "2h", "1d")')
-  .option('--list', 'List all reminders')
-  .option('--delete <id>', 'Delete a reminder by ID')
-  .option('--clear', 'Clear triggered reminders')
-  .action(async (message: string | undefined, options: any) => {
+  .command('remind <action> [args...]')
+  .description('Smart reminders — rules engine for board state alerts')
+  .allowUnknownOption()
+  .action(async (action: string, args: string[]) => {
     try {
-      await remindCommand(message, options);
+      await remindCommand(action, ...args);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('link-test <taskId> <suitePath>')
+  .description('Link an apix test suite to a kanban task as acceptance criteria')
+  .option('--repo <owner/repo>', 'GitHub repo for the test suite')
+  .option('--unlink', 'Remove the test suite link instead of adding it')
+  .option('--backend <backend>', 'Backend to use: dwlf (default) or local', 'dwlf')
+  .action(async (taskId: string, suitePath: string, options: any) => {
+    try {
+      await linkTestCommand(taskId, suitePath, options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);

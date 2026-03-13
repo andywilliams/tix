@@ -1,358 +1,383 @@
 import chalk from 'chalk';
+import Table from 'cli-table3';
 import inquirer from 'inquirer';
+import {
+  loadRules,
+  saveUserRules,
+  evaluateRules,
+  sendReminderToSlack,
+  getHistory,
+  clearCooldowns,
+  BUILT_IN_RULES,
+  type ReminderRule,
+  type RuleCondition,
+  type RuleAction,
+} from '../lib/reminder-rules';
 import { loadConfig } from '../lib/config';
-import type { EqConfig } from '../types';
 
-interface ReminderOptions {
-  at?: string;
-  in?: string;
-  list?: boolean;
-  delete?: string;
-  clear?: boolean;
-}
-
-const DEFAULT_BASE_URL = 'http://localhost:3001/api';
-
-// Parse duration string (e.g. "1d", "2h", "30m") to milliseconds
-function parseDuration(duration: string): number {
-  const match = duration.match(/^(\d+)([mhd])$/);
-  if (!match) {
-    throw new Error(`Invalid duration format: ${duration}. Use format like "30m", "2h", "1d"`);
-  }
-
-  const [, num, unit] = match;
-  const value = parseInt(num, 10);
-
-  switch (unit) {
-    case 'm': return value * 60 * 1000;
-    case 'h': return value * 60 * 60 * 1000;
-    case 'd': return value * 24 * 60 * 60 * 1000;
-    default: throw new Error(`Unknown time unit: ${unit}`);
-  }
-}
-
-// Parse datetime string to Date
-function parseDatetime(datetime: string): Date {
-  const date = new Date(datetime);
-  if (isNaN(date.getTime())) {
-    throw new Error(`Invalid datetime format: ${datetime}. Use ISO format like "2026-03-12" or "2026-03-12T14:30"`);
-  }
-  if (date.getTime() < Date.now()) {
-    throw new Error('Reminder time must be in the future');
-  }
-  return date;
-}
-
-// Format relative time for display
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-  const minutes = Math.floor(diff / (60 * 1000));
-  const hours = Math.floor(diff / (60 * 60 * 1000));
-  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
-
-  if (minutes < 60) {
-    return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-  } else if (hours < 24) {
-    return `${hours} hour${hours !== 1 ? 's' : ''}`;
-  } else {
-    return `${days} day${days !== 1 ? 's' : ''}`;
+export async function remindCommand(action: string, ...args: any[]) {
+  switch (action) {
+    case 'run':
+      await runReminders(args[0] === '--dry-run' || args[0] === 'dry-run');
+      break;
+    case 'rules':
+      await listRules();
+      break;
+    case 'add':
+      await addRule();
+      break;
+    case 'enable':
+      await toggleRule(args[0], true);
+      break;
+    case 'disable':
+      await toggleRule(args[0], false);
+      break;
+    case 'remove':
+      await removeRule(args[0]);
+      break;
+    case 'history':
+      await showHistory();
+      break;
+    case 'reset-cooldowns':
+      clearCooldowns();
+      console.log(chalk.green('✅ All cooldowns reset'));
+      break;
+    case 'templates':
+      showTemplates();
+      break;
+    default:
+      console.error(`Unknown remind action: ${action}`);
+      console.log('Available actions: run, rules, add, enable, disable, remove, history, reset-cooldowns, templates');
+      process.exit(1);
   }
 }
 
-// Fetch reminders from API
-async function fetchReminders(baseUrl: string): Promise<any[]> {
-  const { default: fetch } = await import('node-fetch');
-  const response = await fetch(`${baseUrl}/reminders`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch reminders: ${response.statusText}`);
-  }
-  const data = await response.json();
-  return data.reminders || [];
-}
+// ─── Run ──────────────────────────────────────────────────────────────────────
 
-// Create a reminder via API
-async function createReminderApi(baseUrl: string, message: string, remindAt: Date, taskId?: string): Promise<any> {
-  const { default: fetch } = await import('node-fetch');
-  const response = await fetch(`${baseUrl}/reminders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      remindAt: remindAt.toISOString(),
-      taskId
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to create reminder: ${error}`);
+async function runReminders(dryRun: boolean = false) {
+  if (dryRun) {
+    console.log(chalk.blue('🔍 Dry run — no notifications will be sent\n'));
   }
 
-  const data = await response.json();
-  return data.reminder;
-}
+  const matches = evaluateRules({ dryRun });
 
-// Delete a reminder via API
-async function deleteReminderApi(baseUrl: string, reminderId: string): Promise<void> {
-  const { default: fetch } = await import('node-fetch');
-  const response = await fetch(`${baseUrl}/reminders/${reminderId}`, {
-    method: 'DELETE'
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete reminder: ${response.statusText}`);
-  }
-}
-
-// Clear triggered reminders via API
-async function clearTriggeredRemindersApi(baseUrl: string): Promise<void> {
-  const { default: fetch } = await import('node-fetch');
-  const response = await fetch(`${baseUrl}/reminders/clear-triggered`, {
-    method: 'POST'
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to clear triggered reminders: ${response.statusText}`);
-  }
-}
-
-export async function remindCommand(message: string | undefined, options: ReminderOptions): Promise<void> {
-  const config = loadConfig();
-  const baseUrl = process.env.TIX_KANBAN_URL || DEFAULT_BASE_URL;
-
-  console.log(chalk.bold.cyan('\n🔔 tix remind — Personal Reminders\n'));
-
-  // Handle list option
-  if (options.list) {
-    await listReminders(baseUrl);
+  if (matches.length === 0) {
+    console.log(chalk.green('✅ No reminders triggered — everything looks good!'));
     return;
   }
 
-  // Handle delete option
-  if (options.delete) {
-    await deleteReminderApi(baseUrl, options.delete);
-    console.log(chalk.green(`✅ Reminder deleted`));
+  console.log(chalk.bold(`\n⏰ ${matches.length} reminder(s) triggered:\n`));
+
+  for (const match of matches) {
+    console.log(chalk.yellow(`  [${match.ruleName}]`) + ` ${match.entityId}`);
+    // Strip Slack markdown for console display
+    const consoleMsg = match.message.replace(/\*/g, '').replace(/_/g, '');
+    console.log(`  ${consoleMsg}`);
+    console.log();
+  }
+
+  if (!dryRun) {
+    // Try Slack notification
+    try {
+      const config = loadConfig();
+      const slackMatches = matches.filter(m => {
+        const rules = loadRules();
+        const rule = rules.find(r => r.id === m.ruleId);
+        return rule?.action.type === 'slack';
+      });
+
+      if (slackMatches.length > 0 && config.slackWebhook) {
+        await sendReminderToSlack(config.slackWebhook, slackMatches);
+      } else if (slackMatches.length > 0 && !config.slackWebhook) {
+        console.log(chalk.dim('  (No Slack webhook configured — run `tix setup-slack` to enable Slack notifications)'));
+      }
+    } catch (err: any) {
+      console.log(chalk.dim(`  (Could not load config for Slack: ${err.message})`));
+    }
+  }
+}
+
+// ─── List Rules ───────────────────────────────────────────────────────────────
+
+async function listRules() {
+  const rules = loadRules();
+
+  if (rules.length === 0) {
+    console.log('No reminder rules configured. Run `tix remind add` to create one.');
     return;
   }
 
-  // Handle clear option
-  if (options.clear) {
-    await clearTriggeredRemindersApi(baseUrl);
-    console.log(chalk.green(`✅ Triggered reminders cleared`));
-    return;
+  console.log(chalk.bold('\n📋 Reminder Rules\n'));
+
+  const table = new Table({
+    head: [
+      chalk.cyan('ID'),
+      chalk.cyan('Name'),
+      chalk.cyan('Target'),
+      chalk.cyan('Status'),
+      chalk.cyan('Cooldown'),
+      chalk.cyan('Built-in'),
+    ],
+    colWidths: [22, 24, 10, 10, 10, 10],
+  });
+
+  for (const rule of rules) {
+    table.push([
+      rule.id,
+      rule.name,
+      rule.target,
+      rule.enabled ? chalk.green('on') : chalk.red('off'),
+      rule.cooldown,
+      rule.builtIn ? 'yes' : 'no',
+    ]);
   }
 
-  // If no message provided, show interactive mode
-  if (!message) {
-    const { action } = await inquirer.prompt([
+  console.log(table.toString());
+  console.log();
+
+  for (const rule of rules) {
+    console.log(chalk.bold(`  ${rule.name}`) + chalk.dim(` (${rule.id})`));
+    console.log(`    ${rule.description}`);
+    console.log(`    Conditions: ${rule.conditions.map(c => `${c.field} ${c.operator} ${JSON.stringify(c.value)}`).join(' AND ')}`);
+    console.log();
+  }
+}
+
+// ─── Add Rule (Interactive) ───────────────────────────────────────────────────
+
+async function addRule() {
+  console.log(chalk.bold('\n📝 Create a New Reminder Rule\n'));
+
+  const answers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'name',
+      message: 'Rule name:',
+      validate: (v: string) => v.length > 0 || 'Name is required',
+    },
+    {
+      type: 'input',
+      name: 'description',
+      message: 'Description:',
+      validate: (v: string) => v.length > 0 || 'Description is required',
+    },
+    {
+      type: 'list',
+      name: 'target',
+      message: 'What does this rule monitor?',
+      choices: [
+        { name: 'Tickets (status, priority, age)', value: 'ticket' },
+        { name: 'Pull Requests (reviews, activity)', value: 'pr' },
+        { name: 'Backlog (count-based)', value: 'backlog' },
+      ],
+    },
+  ]);
+
+  const conditions: RuleCondition[] = [];
+  let addMore = true;
+
+  while (addMore) {
+    const fieldChoices = answers.target === 'ticket'
+      ? ['status', 'priority', 'age', 'ticketNumber', 'title']
+      : answers.target === 'pr'
+      ? ['reviewDecision', 'unresolvedComments', 'age', 'repo', 'title']
+      : ['status', 'count'];
+
+    const condAnswers = await inquirer.prompt([
       {
         type: 'list',
-        name: 'action',
-        message: 'What would you like to do?',
-        choices: [
-          { name: 'List all reminders', value: 'list' },
-          { name: 'Create a new reminder', value: 'create' },
-          { name: 'Clear triggered reminders', value: 'clear' }
-        ]
-      }
+        name: 'field',
+        message: 'Condition field:',
+        choices: fieldChoices,
+      },
+      {
+        type: 'list',
+        name: 'operator',
+        message: 'Operator:',
+        choices: ['=', '!=', '>', '<', '>=', '<=', 'in', 'not_in'],
+      },
+      {
+        type: 'input',
+        name: 'value',
+        message: 'Value (for "in"/"not_in" use comma-separated):',
+        validate: (v: string) => v.length > 0 || 'Value is required',
+      },
+      {
+        type: 'confirm',
+        name: 'addMore',
+        message: 'Add another condition?',
+        default: false,
+      },
     ]);
 
-    if (action === 'list') {
-      await listReminders(baseUrl);
-      return;
+    let value: string | number | string[] = condAnswers.value;
+    if (['in', 'not_in'].includes(condAnswers.operator)) {
+      value = condAnswers.value.split(',').map((s: string) => s.trim());
+    } else if (!isNaN(Number(condAnswers.value)) && condAnswers.field !== 'age') {
+      value = Number(condAnswers.value);
     }
 
-    if (action === 'clear') {
-      await clearTriggeredRemindersApi(baseUrl);
-      console.log(chalk.green(`✅ Triggered reminders cleared`));
-      return;
-    }
+    conditions.push({
+      field: condAnswers.field,
+      operator: condAnswers.operator,
+      value,
+    });
 
-    // Create new reminder interactively
-    await createReminderInteractive(baseUrl);
-    return;
+    addMore = condAnswers.addMore;
   }
 
-  // Validate time options
-  if (!options.at && !options.in) {
-    console.error(chalk.red('Error: Please specify either --at <datetime> or --in <duration>'));
-    console.log(chalk.dim('Examples:'));
-    console.log(chalk.dim('  tix remind "Follow up on PR #73" --at 2026-03-12'));
-    console.log(chalk.dim('  tix remind "Check deployment" --in 1d'));
-    process.exit(1);
-  }
-
-  if (options.at && options.in) {
-    console.error(chalk.red('Error: Please specify only one of --at or --in, not both'));
-    process.exit(1);
-  }
-
-  // Calculate reminder time
-  let remindAt: Date;
-
-  if (options.at) {
-    remindAt = parseDatetime(options.at);
-  } else if (options.in) {
-    const durationMs = parseDuration(options.in);
-    remindAt = new Date(Date.now() + durationMs);
-  } else {
-    // This shouldn't happen due to earlier validation
-    console.error(chalk.red('Error: Please specify either --at <datetime> or --in <duration>'));
-    process.exit(1);
-  }
-
-  // Create the reminder
-  try {
-    const reminder = await createReminderApi(baseUrl, message, remindAt);
-    console.log(chalk.green(`✅ Reminder created:`));
-    console.log(`  "${reminder.message}"`);
-    console.log(`  Will remind at: ${chalk.yellow(reminder.remindAt)} (in ${formatRelativeTime(new Date(reminder.remindAt))})`);
-  } catch (error) {
-    console.error(chalk.red(`Error: ${(error as Error).message}`));
-    console.error(chalk.dim('Make sure tix-kanban is running: cd /path/to/tix-kanban && npm start'));
-    process.exit(1);
-  }
-}
-
-async function createReminderInteractive(baseUrl: string): Promise<void> {
-  const { message } = await inquirer.prompt([
+  const actionAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'type',
+      message: 'Notification type:',
+      choices: [
+        { name: 'Slack', value: 'slack' },
+        { name: 'Console only', value: 'console' },
+      ],
+    },
     {
       type: 'input',
       name: 'message',
-      message: 'What would you like to be reminded about?',
-      validate: (input: string) => input.trim().length > 0 || 'Please enter a message'
-    }
-  ]);
-
-  const { timeOption } = await inquirer.prompt([
+      message: 'Message template (use {id}, {title}, {age}, {status}, {url}, {count}, {number}):',
+      validate: (v: string) => v.length > 0 || 'Message is required',
+    },
     {
       type: 'list',
-      name: 'timeOption',
-      message: 'When should I remind you?',
-      choices: [
-        { name: 'In X minutes', value: 'minutes' },
-        { name: 'In X hours', value: 'hours' },
-        { name: 'In X days', value: 'days' },
-        { name: 'At a specific date/time', value: 'specific' }
-      ]
-    }
+      name: 'cooldown',
+      message: 'Cooldown (prevents duplicate alerts):',
+      choices: ['1h', '4h', '12h', '24h', '48h', '7d'],
+      default: '24h',
+    },
   ]);
 
-  let remindAt: Date;
+  const newRule: ReminderRule = {
+    id: `custom-${Date.now().toString(36)}`,
+    name: answers.name,
+    description: answers.description,
+    enabled: true,
+    target: answers.target,
+    conditions,
+    action: {
+      type: actionAnswers.type,
+      message: actionAnswers.message,
+    },
+    cooldown: actionAnswers.cooldown,
+  };
 
-  if (timeOption === 'minutes') {
-    const { minutes } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'minutes',
-        message: 'How many minutes from now?',
-        validate: (input: string) => {
-          const num = parseInt(input, 10);
-          return !isNaN(num) && num > 0 || 'Please enter a positive number';
-        },
-        filter: (input: string) => parseInt(input, 10)
-      }
-    ]);
-    remindAt = new Date(Date.now() + minutes * 60 * 1000);
-  } else if (timeOption === 'hours') {
-    const { hours } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'hours',
-        message: 'How many hours from now?',
-        validate: (input: string) => {
-          const num = parseInt(input, 10);
-          return !isNaN(num) && num > 0 || 'Please enter a positive number';
-        },
-        filter: (input: string) => parseInt(input, 10)
-      }
-    ]);
-    remindAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-  } else if (timeOption === 'days') {
-    const { days } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'days',
-        message: 'How many days from now?',
-        validate: (input: string) => {
-          const num = parseInt(input, 10);
-          return !isNaN(num) && num > 0 || 'Please enter a positive number';
-        },
-        filter: (input: string) => parseInt(input, 10)
-      }
-    ]);
-    remindAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-  } else {
-    const { datetime } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'datetime',
-        message: 'Enter date/time (YYYY-MM-DD or YYYY-MM-DDTHH:MM):',
-        validate: (input: string) => {
-          try {
-            const date = new Date(input);
-            return !isNaN(date.getTime()) && date.getTime() > Date.now() || 'Please enter a valid future date/time';
-          } catch {
-            return false;
-          }
-        }
-      }
-    ]);
-    remindAt = parseDatetime(datetime);
-  }
+  // Load existing user rules and add the new one
+  const allRules = loadRules();
+  const userRules = allRules.filter(r => !r.builtIn);
+  userRules.push(newRule);
+  saveUserRules(userRules);
 
-  try {
-    const reminder = await createReminderApi(baseUrl, message, remindAt);
-    console.log(chalk.green(`\n✅ Reminder created:`));
-    console.log(`  "${reminder.message}"`);
-    console.log(`  Will remind at: ${chalk.yellow(reminder.remindAt)} (in ${formatRelativeTime(new Date(reminder.remindAt))})`);
-  } catch (error) {
-    console.error(chalk.red(`Error: ${(error as Error).message}`));
-    process.exit(1);
-  }
+  console.log(chalk.green(`\n✅ Rule "${newRule.name}" created (${newRule.id})`));
+  console.log(chalk.dim('  Run `tix remind run --dry-run` to test it'));
 }
 
-async function listReminders(baseUrl: string): Promise<void> {
-  try {
-    const reminders = await fetchReminders(baseUrl);
+// ─── Toggle Rule ──────────────────────────────────────────────────────────────
 
-    if (reminders.length === 0) {
-      console.log(chalk.yellow('No reminders found.'));
-      return;
-    }
-
-    // Separate active and triggered
-    const active = reminders.filter((r: any) => !r.triggered);
-    const triggered = reminders.filter((r: any) => r.triggered);
-
-    if (active.length > 0) {
-      console.log(chalk.bold('\n📌 Active Reminders:\n'));
-      for (const reminder of active) {
-        const remindAt = new Date(reminder.remindAt);
-        const taskRef = reminder.taskId ? chalk.dim(` [task: ${reminder.taskId}]`) : '';
-        console.log(`  ${chalk.cyan('•')} ${reminder.message}${taskRef}`);
-        console.log(`    ${chalk.dim('Due:')} ${chalk.yellow(remindAt.toLocaleString())} (in ${formatRelativeTime(remindAt)})`);
-        console.log(`    ${chalk.dim('ID:')} ${chalk.gray(reminder.id)}`);
-        console.log();
-      }
-    }
-
-    if (triggered.length > 0) {
-      console.log(chalk.bold('\n✅ Previously Triggered:\n'));
-      for (const reminder of triggered.slice(0, 5)) { // Show last 5
-        const remindAt = new Date(reminder.remindAt);
-        console.log(`  ${chalk.gray('•')} ${reminder.message}`);
-        console.log(`    ${chalk.gray('Triggered at:')} ${remindAt.toLocaleString()}`);
-        console.log();
-      }
-      if (triggered.length > 5) {
-        console.log(chalk.dim(`  ... and ${triggered.length - 5} more (use --clear to remove)`));
-      }
-    }
-  } catch (error) {
-    console.error(chalk.red(`Error: ${(error as Error).message}`));
-    console.error(chalk.dim('Make sure tix-kanban is running: cd /path/to/tix-kanban && npm start'));
+async function toggleRule(ruleId: string, enabled: boolean) {
+  if (!ruleId) {
+    console.error(`Usage: tix remind ${enabled ? 'enable' : 'disable'} <rule-id>`);
     process.exit(1);
+  }
+
+  const allRules = loadRules();
+  const rule = allRules.find(r => r.id === ruleId);
+
+  if (!rule) {
+    console.error(`Rule not found: ${ruleId}`);
+    process.exit(1);
+  }
+
+  rule.enabled = enabled;
+
+  // Save only rules that differ from defaults (custom rules or toggled built-ins)
+  saveUserRules(allRules.filter(r => {
+    const builtIn = BUILT_IN_RULES.find(b => b.id === r.id);
+    return !builtIn || builtIn.enabled !== r.enabled;
+  }));
+
+  const icon = enabled ? '✅' : '⏸️';
+  console.log(chalk[enabled ? 'green' : 'yellow'](`${icon} Rule "${rule.name}" ${enabled ? 'enabled' : 'disabled'}`));
+}
+
+// ─── Remove Rule ──────────────────────────────────────────────────────────────
+
+async function removeRule(ruleId: string) {
+  if (!ruleId) {
+    console.error('Usage: tix remind remove <rule-id>');
+    process.exit(1);
+  }
+
+  const allRules = loadRules();
+  const rule = allRules.find(r => r.id === ruleId);
+
+  if (!rule) {
+    console.error(`Rule not found: ${ruleId}`);
+    process.exit(1);
+  }
+
+  if (rule.builtIn) {
+    console.error('Cannot remove a built-in rule. Use `tix remind disable` instead.');
+    process.exit(1);
+  }
+
+  const userRules = allRules.filter(r => r.id !== ruleId && !r.builtIn);
+  // Also include built-in overrides that aren't the removed one
+  const builtInOverrides = allRules.filter(r => r.id !== ruleId && BUILT_IN_RULES.some(b => b.id === r.id));
+  saveUserRules([...userRules, ...builtInOverrides]);
+
+  console.log(chalk.red(`🗑️ Removed rule: ${rule.name}`));
+}
+
+// ─── History ──────────────────────────────────────────────────────────────────
+
+async function showHistory() {
+  const history = getHistory(20);
+
+  if (history.length === 0) {
+    console.log('No reminder history yet. Run `tix remind run` to evaluate rules.');
+    return;
+  }
+
+  console.log(chalk.bold('\n📜 Reminder History (last 20)\n'));
+
+  const table = new Table({
+    head: [
+      chalk.cyan('Time'),
+      chalk.cyan('Rule'),
+      chalk.cyan('Entity'),
+      chalk.cyan('Title'),
+    ],
+    colWidths: [22, 20, 14, 40],
+    wordWrap: true,
+  });
+
+  for (const match of history) {
+    table.push([
+      new Date(match.timestamp).toLocaleString(),
+      match.ruleName,
+      match.entityId,
+      match.entityTitle,
+    ]);
+  }
+
+  console.log(table.toString());
+}
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+
+function showTemplates() {
+  console.log(chalk.bold('\n📦 Built-in Rule Templates\n'));
+
+  for (const rule of BUILT_IN_RULES) {
+    console.log(chalk.bold(`  ${rule.name}`) + chalk.dim(` (${rule.id})`));
+    console.log(`    ${rule.description}`);
+    console.log(`    Target: ${rule.target} | Cooldown: ${rule.cooldown}`);
+    console.log(`    Conditions: ${rule.conditions.map(c => `${c.field} ${c.operator} ${JSON.stringify(c.value)}`).join(' AND ')}`);
+    console.log(`    Message: ${rule.action.message}`);
+    console.log();
   }
 }

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import { loadConfig, saveConfig } from '../lib/config';
 import { saveSyncedTickets } from '../lib/ticket-store';
 import type { EqConfig, TicketSummary } from '../types';
@@ -165,10 +166,9 @@ function runViewModeSync(databaseUrl: string, timeoutMs: number, verbose: boolea
 // ---------------------------------------------------------------------------
 
 function runSqlModeSync(dsId: string, userName: string, timeoutMs: number, verbose: boolean, notionUserId?: string): Promise<string> {
-  const assigneeFilter = notionUserId
-    ? `"Assignee" LIKE '%${notionUserId}%'`
-    : `"Assignee" LIKE '%${userName}%'`;
-  const sqlQuery = `SELECT * FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged') AND ${assigneeFilter}`;
+  // Note: assignee filter removed from SQL — column name varies across Notion databases.
+  // Assignee filtering is handled in post-processing by parseTicketsFromSqlResult.
+  const sqlQuery = `SELECT * FROM "collection://${dsId}" WHERE "Status" NOT IN ('Done', 'Complete', 'Completed', 'Shipped', 'Released', 'Closed', 'Won''t Do', 'Won''t do', 'Merged')`;
 
   if (verbose) console.log(chalk.dim('SQL: ' + sqlQuery));
 
@@ -257,7 +257,7 @@ const COMPLETED_STATUSES = new Set([
   'done', 'complete', 'completed', 'shipped', 'released', 'closed', "won't do", 'wont do', 'merged',
 ]);
 
-function parseTicketsFromOutput(output: string): TicketSummary[] | null {
+function parseTicketsFromOutput(output: string, skipFileFallback = false): TicketSummary[] | null {
   let jsonStr = output;
 
   // Strip markdown fences
@@ -291,6 +291,20 @@ function parseTicketsFromOutput(output: string): TicketSummary[] | null {
   // If output looks like a markdown table, try to parse it
   const tableRows = parseMarkdownTable(output);
   if (tableRows) return rowsToTickets(tableRows);
+
+  // Last resort: Claude sometimes saves large MCP results to a file and reports the path.
+  // Detect a file path in the output, read the file, then run all parsing strategies on it
+  // (via recursion with a guard to prevent infinite loops).
+  if (!skipFileFallback) {
+    const filePathMatch = output.match(/\/[^\s]+tool-results[^\s]+\.txt/);
+    if (filePathMatch) {
+      try {
+        const fileContent = readFileSync(filePathMatch[0], 'utf-8');
+        const result = parseTicketsFromOutput(fileContent, true);
+        if (result !== null) return result;
+      } catch { /* file unreadable, fall through */ }
+    }
+  }
 
   return null;
 }

@@ -1,3 +1,11 @@
+export interface BackupConfig {
+  enabled: boolean;
+  frequency: string;
+  path?: string;
+  maxBackups: number;
+  excludePatterns?: string[];
+}
+
 export interface EqConfig {
   notionApiKey?: string;
   notionDatabaseId?: string;
@@ -7,6 +15,7 @@ export interface EqConfig {
   userName: string;
   githubOrg: string;
   slackWebhook?: string;
+  backup?: BackupConfig;
 }
 
 export interface TicketSummary {
