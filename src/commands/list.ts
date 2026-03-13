@@ -70,10 +70,10 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
   } catch (err: any) {
     const errorMessage = err.message || String(err);
     
-    // Check for auth errors
+    // Check for auth errors (specific checks only)
     if (errorMessage.includes('Unauthorized') || errorMessage.includes('401') || 
-        errorMessage.toLowerCase().includes('invalid api key') || 
-        errorMessage.toLowerCase().includes('unauthorized')) {
+        (errorMessage.toLowerCase().includes('api key') && errorMessage.toLowerCase().includes('invalid')) || 
+        errorMessage.toLowerCase().includes('invalid token')) {
       const error = { error: "Invalid or expired Notion API key", code: "auth-failure" };
       console.error(JSON.stringify(error));
       process.exit(2);
@@ -104,11 +104,19 @@ async function queryTickets(
   // Build filter
   const filter: any = { and: [] };
 
-  // Status filter
+  // Status filter - find the property dynamically and handle both status and select types
   if (options.status) {
+    // We'll query without filter first to get property info, then apply status filter if valid
+    // For simplicity, try status type first, then select type
     filter.and.push({
-      property: 'Status',
-      status: { equals: options.status },
+      or: [
+        { property: 'Status', status: { equals: options.status } },
+        { property: 'Status', select: { equals: options.status } },
+        { property: 'State', status: { equals: options.status } },
+        { property: 'State', select: { equals: options.status } },
+        { property: 'Stage', status: { equals: options.status } },
+        { property: 'Stage', select: { equals: options.status } },
+      ],
     });
   }
 
@@ -121,14 +129,25 @@ async function queryTickets(
   }
 
   // Assignee filter
+  // Note: Notion API `people` filter requires a UUID, not an email address.
+  // If an email is passed, we warn on stderr and skip this filter rather than
+  // sending a request that will fail.
   if (options.assignee) {
-    filter.and.push({
-      or: [
-        { property: 'Assigned to', people: { contains: options.assignee } },
-        { property: 'Assignee', people: { contains: options.assignee } },
-        { property: 'Assigned', people: { contains: options.assignee } },
-      ],
-    });
+    const isEmail = options.assignee.includes('@');
+    if (isEmail) {
+      process.stderr.write(JSON.stringify({
+        error: `--assignee filter requires a Notion user UUID, not an email address ("${options.assignee}"). Resolve the UUID via the Notion API or admin panel.`,
+        code: 'invalid-filter',
+      }) + '\n');
+    } else {
+      filter.and.push({
+        or: [
+          { property: 'Assigned to', people: { contains: options.assignee } },
+          { property: 'Assignee', people: { contains: options.assignee } },
+          { property: 'Assigned', people: { contains: options.assignee } },
+        ],
+      });
+    }
   }
 
   const filterObj = filter.and.length > 0 ? filter : undefined;
@@ -142,16 +161,17 @@ async function queryTickets(
       filter: filterObj,
     });
   } catch (err: any) {
-    // If filter fails (e.g., property doesn't exist), try without filter
-    if (err.message?.includes('property') || err.message?.includes('does not exist')) {
-      response = await notion.databases.query({
-        database_id: config.notionDatabaseId,
-        page_size: Math.min(limit, 100),
-        start_cursor: cursor,
-      });
-    } else {
-      throw err;
+    // If filter fails, provide a helpful error message instead of silently dropping filters
+    const errMsg = err.message || String(err);
+    if (errMsg.includes('property') || errMsg.includes('does not exist') || errMsg.includes('invalid filter')) {
+      const filterDesc = [
+        options.status && `--status "${options.status}"`,
+        options.since && `--since "${options.since}"`,
+        options.assignee && `--assignee "${options.assignee}"`,
+      ].filter(Boolean).join(', ');
+      throw new Error(`Filter error: One of the specified filters (${filterDesc || 'none'}) may reference a property that doesn't exist in the database. Original error: ${errMsg}`);
     }
+    throw err;
   }
 
   const results = response.results;
