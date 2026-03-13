@@ -1,6 +1,6 @@
 import { Client } from '@notionhq/client';
 import { loadConfig } from '../lib/config';
-import { createNotionClient, extractPropertyValue, findProperty, findTitleProperty } from '../lib/notion';
+import { createNotionClient, extractGitHubLinksFromText, extractPropertyValue, findProperty, findTitleProperty } from '../lib/notion';
 
 interface ListOptions {
   json?: boolean;
@@ -24,9 +24,11 @@ interface ForgeTicket {
   lastUpdated: string;
 }
 
-const COMPLETED_STATUSES = new Set([
-  'done', 'complete', 'completed', 'shipped', 'released', 'closed', "won't do", 'wont do', 'merged',
-]);
+interface QueryResult {
+  tickets: ForgeTicket[];
+  cursor: string | null;
+  hasMore: boolean;
+}
 
 export async function listCommand(options: ListOptions = {}): Promise<void> {
   const config = loadConfig();
@@ -47,19 +49,19 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
   const notion = createNotionClient(config);
 
   try {
-    const tickets = await queryTickets(notion, config, options);
+    const result = await queryTickets(notion, config, options);
 
     if (options.json) {
       // Machine-readable JSON output
-      console.log(JSON.stringify(tickets));
+      console.log(JSON.stringify(result));
     } else {
       // Human-readable output
-      if (tickets.length === 0) {
+      if (result.tickets.length === 0) {
         console.log('No tickets found.');
         return;
       }
-      console.log(`Found ${tickets.length} ticket(s):\n`);
-      for (const t of tickets) {
+      console.log(`Found ${result.tickets.length} ticket(s):\n`);
+      for (const t of result.tickets) {
         const statusStr = t.status ? `[${t.status}]` : '';
         const ticketNum = t.ticketNumber ? `${t.ticketNumber} ` : '';
         console.log(`  ${ticketNum}${t.title} ${statusStr}`);
@@ -70,8 +72,8 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
     
     // Check for auth errors
     if (errorMessage.includes('Unauthorized') || errorMessage.includes('401') || 
-        errorMessage.includes('API key') || errorMessage.includes('unauthorized') || 
-        errorMessage.includes('invalid')) {
+        errorMessage.toLowerCase().includes('invalid api key') || 
+        errorMessage.toLowerCase().includes('unauthorized')) {
       const error = { error: "Invalid or expired Notion API key", code: "auth-failure" };
       console.error(JSON.stringify(error));
       process.exit(2);
@@ -95,7 +97,7 @@ async function queryTickets(
   notion: Client,
   config: any,
   options: ListOptions
-): Promise<ForgeTicket[]> {
+): Promise<QueryResult> {
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
   const cursor = options.cursor;
 
@@ -113,8 +115,8 @@ async function queryTickets(
   // Since filter (last edited time)
   if (options.since) {
     filter.and.push({
-      property: 'Last edited time',
-      date: { on_or_after: options.since },
+      timestamp: 'last_edited_time',
+      last_edited_time: { on_or_after: options.since },
     });
   }
 
@@ -131,28 +133,28 @@ async function queryTickets(
 
   const filterObj = filter.and.length > 0 ? filter : undefined;
 
-  let results: any[] = [];
+  let response: any;
   try {
-    const response = await notion.databases.query({
+    response = await notion.databases.query({
       database_id: config.notionDatabaseId,
       page_size: Math.min(limit, 100),
       start_cursor: cursor,
       filter: filterObj,
     });
-    results = response.results;
   } catch (err: any) {
     // If filter fails (e.g., property doesn't exist), try without filter
     if (err.message?.includes('property') || err.message?.includes('does not exist')) {
-      const response = await notion.databases.query({
+      response = await notion.databases.query({
         database_id: config.notionDatabaseId,
         page_size: Math.min(limit, 100),
         start_cursor: cursor,
       });
-      results = response.results;
     } else {
       throw err;
     }
   }
+
+  const results = response.results;
 
   const tickets: ForgeTicket[] = [];
 
@@ -186,7 +188,7 @@ async function queryTickets(
     for (const [, prop] of Object.entries(props)) {
       const val = extractPropertyValue(prop);
       if (typeof val === 'string') {
-        const links = extractGitHubLinks(val);
+        const links = extractGitHubLinksFromText(val);
         githubLinks.push(...links);
       }
     }
@@ -208,13 +210,11 @@ async function queryTickets(
     });
   }
 
-  return tickets;
+  return {
+    tickets,
+    cursor: response.next_cursor || null,
+    hasMore: response.has_more || false,
+  };
 }
 
-function extractGitHubLinks(text: string): string[] {
-  const links: string[] = [];
-  const prRegex = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-  const prMatches = text.match(prRegex);
-  if (prMatches) links.push(...prMatches);
-  return links;
-}
+

@@ -279,7 +279,7 @@ function extractGitHubLinksFromBlock(block: any): string[] {
 /**
  * Extract GitHub PR/repo URLs from text.
  */
-function extractGitHubLinksFromText(text: string): string[] {
+export function extractGitHubLinksFromText(text: string): string[] {
   const links: string[] = [];
   // Match GitHub PR URLs
   const prRegex = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
