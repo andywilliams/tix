@@ -173,15 +173,15 @@ function runSqlModeSync(dsId: string, userName: string, timeoutMs: number, verbo
   if (verbose) console.log(chalk.dim('SQL: ' + sqlQuery));
 
   const dsUrl = `collection://${dsId}`;
-  const prompt = `Query Notion database ${dsUrl} with this SQL:\n${sqlQuery}\n\nReturn only the raw JSON result. If the tool saves results to a file, read the file and return its contents directly.`;
+  const prompt = `Query Notion database ${dsUrl} with this SQL:\n${sqlQuery}\n\nReturn only the raw JSON result.`;
 
   return runClaude(
     [
       '--print',
       '--model', 'haiku',
       '--output-format', 'json',
-      '--allowedTools', 'mcp__notion__notion-query-data-sources,mcp__notion__notion-fetch',
-      '--append-system-prompt', 'Make exactly ONE tool call. If results are saved to a file, read and return the file contents. Return only the raw result JSON. No commentary.',
+      '--allowedTools', 'mcp__notion__notion-query-data-sources',
+      '--append-system-prompt', 'Make exactly ONE tool call. Return only the raw result JSON. No commentary.',
       '-p', prompt,
     ],
     timeoutMs,
