@@ -174,12 +174,25 @@ async function queryTickets(
 
     if (isPropertyError) {
       // Retry without status/assignee filters, apply them client-side
-      response = await notion.databases.query({
-        database_id: config.notionDatabaseId,
-        page_size: Math.min(limit, 100),
-        start_cursor: cursor,
-        filter: filterObj, // Only the safe "since" filter
-      });
+      // Paginate to fill up to the requested limit when using client-side filtering
+      let allResults: any[] = [];
+      let nextCursor: string | null = cursor || null;
+      let hasMore = true;
+
+      while (hasMore && allResults.length < limit) {
+        const pageResponse = await notion.databases.query({
+          database_id: config.notionDatabaseId,
+          page_size: Math.min(limit - allResults.length, 100),
+          start_cursor: nextCursor || undefined,
+          filter: filterObj, // Only the safe "since" filter
+        });
+        
+        allResults.push(...pageResponse.results);
+        nextCursor = pageResponse.next_cursor;
+        hasMore = pageResponse.has_more || false;
+      }
+
+      response = { results: allResults, next_cursor: nextCursor, has_more: hasMore };
       usedClientSideFilter = true;
     } else {
       throw err;
@@ -213,8 +226,9 @@ async function queryTickets(
 
     // Apply client-side assignee filter if needed
     if (usedClientSideFilter && needsClientSideAssigneeFilter) {
-      // Need to check both display name AND person IDs since assignee filter accepts UUID but extractPropertyValue returns names
-      const assigneeProp = props['Assigned to'] || props['Assignee'] || props['Assigned'] || props['Owner'] || props['Person'];
+      // Use findProperty for case-insensitive lookup
+      const assigneePropName = findProperty(props, ['Assigned to', 'Assignee', 'Assigned', 'Owner', 'Person']);
+      const assigneeProp = props[assigneePropName];
       const people = assigneeProp?.people || [];
       const filterValue = options.assignee!.toLowerCase();
       
@@ -226,8 +240,9 @@ async function queryTickets(
       }
     }
 
-    // Extract labels from multi-select
-    const labelsProp = props['Labels'] || props['Tags'] || props['label'];
+    // Extract labels from multi-select - use findProperty for case-insensitive lookup
+    const labelsPropName = findProperty(props, ['Labels', 'Tags', 'Label']);
+    const labelsProp = props[labelsPropName];
     const labels: string[] = [];
     if (labelsProp?.type === 'multi_select') {
       for (const s of labelsProp.multi_select) {
