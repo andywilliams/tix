@@ -12,7 +12,7 @@ export function createNotionClient(config: EqConfig): Client {
 /**
  * Extract a readable value from a Notion property.
  */
-function extractPropertyValue(prop: any): string {
+export function extractPropertyValue(prop: any): string {
   if (!prop) return '';
 
   switch (prop.type) {
@@ -66,7 +66,7 @@ function extractPropertyValue(prop: any): string {
 /**
  * Find the title property name in a set of properties.
  */
-function findTitleProperty(properties: Record<string, any>): string {
+export function findTitleProperty(properties: Record<string, any>): string {
   for (const [name, prop] of Object.entries(properties)) {
     if (prop.type === 'title') return name;
   }
@@ -76,7 +76,7 @@ function findTitleProperty(properties: Record<string, any>): string {
 /**
  * Try to find a property by common names (case-insensitive).
  */
-function findProperty(properties: Record<string, any>, candidates: string[]): string {
+export function findProperty(properties: Record<string, any>, candidates: string[]): string {
   const keys = Object.keys(properties);
   for (const candidate of candidates) {
     const found = keys.find(k => k.toLowerCase() === candidate.toLowerCase());

@@ -21,6 +21,7 @@ import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
 import { linkTestCommand } from './commands/link-test';
+import { listCommand } from './commands/list';
 
 const program = new Command();
 
@@ -348,6 +349,24 @@ program
   .action(async (taskId: string, suitePath: string, options: any) => {
     try {
       await linkTestCommand(taskId, suitePath, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('list')
+  .description('List tickets in JSON format (for Forge provider interface)')
+  .option('--json', 'Output tickets as JSON (machine-readable)')
+  .option('--limit <number>', 'Maximum number of tickets to return')
+  .option('--since <date>', 'Only return tickets updated after this date (YYYY-MM-DD)')
+  .option('--status <status>', 'Filter by status')
+  .option('--assignee <email>', 'Filter by assignee email')
+  .option('--cursor <token>', 'Pagination cursor for fetching next page')
+  .action(async (options: any) => {
+    try {
+      await listCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
