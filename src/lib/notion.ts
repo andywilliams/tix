@@ -25,25 +25,32 @@ export async function fetchTodoBlocks(
   const todos: NotionTodoBlock[] = [];
 
   try {
-    const response = await notion.blocks.children.list({
-      block_id: pageId,
-      page_size: 100,
-    });
+    let cursor: string | undefined;
 
-    for (const block of response.results) {
-      if ((block as any).type === 'to_do') {
-        const toDoBlock = (block as any).to_do;
-        const text = toDoBlock.rich_text
-          ?.map((t: any) => t.plain_text)
-          .join('') || '';
+    do {
+      const response = await notion.blocks.children.list({
+        block_id: pageId,
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
 
-        todos.push({
-          blockId: (block as any).id,
-          text,
-          checked: toDoBlock.checked || false,
-        });
+      for (const block of response.results) {
+        if ((block as any).type === 'to_do') {
+          const toDoBlock = (block as any).to_do;
+          const text = toDoBlock.rich_text
+            ?.map((t: any) => t.plain_text)
+            .join('') || '';
+
+          todos.push({
+            blockId: (block as any).id,
+            text,
+            checked: toDoBlock.checked || false,
+          });
+        }
       }
-    }
+
+      cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+    } while (cursor);
   } catch (err: any) {
     // Page content might not be accessible, return empty
   }

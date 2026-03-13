@@ -107,19 +107,18 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
   }
 
   // Step 3: Get existing kanban tasks to avoid duplicates
+  // Note: we fetch even in dry-run so subtask sync can find parent task IDs for preview
   let existingTasks: KanbanTask[] = [];
-  if (!dryRun) {
-    try {
-      const response = execSync(`curl -s "${baseUrl}/tasks"`, { encoding: 'utf-8' });
-      const data = JSON.parse(response);
-      existingTasks = data.tasks || [];
-      if (verbose) {
-        console.log(chalk.dim(`Found ${existingTasks.length} existing kanban tasks`));
-      }
-    } catch (err) {
-      console.error(chalk.red('Failed to fetch existing kanban tasks:'), err);
-      process.exit(1);
+  try {
+    const response = execSync(`curl -s "${baseUrl}/tasks"`, { encoding: 'utf-8' });
+    const data = JSON.parse(response);
+    existingTasks = data.tasks || [];
+    if (verbose) {
+      console.log(chalk.dim(`Found ${existingTasks.length} existing kanban tasks`));
     }
+  } catch (err) {
+    console.error(chalk.red('Failed to fetch existing kanban tasks:'), err);
+    process.exit(1);
   }
 
   // Step 4: Process each ticket
@@ -366,7 +365,7 @@ async function syncSubtasks(
 
     if (dryRun) {
       console.log(chalk.blue(`[DRY RUN] Would create subtask: ${todo.text.substring(0, 60)}`));
-      skipped++;
+      created++;
       continue;
     }
 
@@ -383,8 +382,8 @@ async function syncSubtasks(
 
     try {
       const response = execSync(
-        `curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d '${JSON.stringify(subtaskData)}'`,
-        { encoding: 'utf-8' }
+        `curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d @-`,
+        { encoding: 'utf-8', input: JSON.stringify(subtaskData) }
       );
       const createdTask = JSON.parse(response);
 
