@@ -108,7 +108,8 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
   }
 
   // Step 3: Get existing kanban tasks to avoid duplicates
-  // Note: we fetch even in dry-run so subtask sync can find parent task IDs for preview
+  // Note: we try to fetch even in dry-run so subtask sync can find parent task IDs for preview,
+  // but we gracefully continue with an empty list if the server is offline during dry-run.
   let existingTasks: KanbanTask[] = [];
   try {
     const response = execSync(`curl -s "${baseUrl}/tasks"`, { encoding: 'utf-8' });
@@ -118,8 +119,12 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
       console.log(chalk.dim(`Found ${existingTasks.length} existing kanban tasks`));
     }
   } catch (err) {
-    console.error(chalk.red('Failed to fetch existing kanban tasks:'), err);
-    process.exit(1);
+    if (dryRun) {
+      if (verbose) console.log(chalk.dim('Could not reach kanban server — dry-run will continue with empty task list'));
+    } else {
+      console.error(chalk.red('Failed to fetch existing kanban tasks:'), err);
+      process.exit(1);
+    }
   }
 
   // Step 4: Process each ticket
@@ -203,6 +208,9 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
           const createResponse = execSync(`curl -s -X POST "${baseUrl}/tasks" -H "Content-Type: application/json" -d '${JSON.stringify(kanbanTask)}'`, { encoding: 'utf-8' });
           const createdTask = JSON.parse(createResponse);
           
+          // Add the newly created task to existingTasks so subtask sync can find it
+          existingTasks.push({ ...kanbanTask, id: createdTask.id });
+
           // Add links (GitHub PRs + Notion)
           syncTaskLinks(baseUrl, createdTask.id, ticket, ticketId, [], verbose);
           

@@ -10,7 +10,7 @@ const execAsync = promisify(execCallback);
 
 const STORAGE_DIR = path.join(os.homedir(), '.tix-kanban');
 const TIX_KANBAN_SETTINGS_FILE = path.join(STORAGE_DIR, 'user-settings.json');
-const TIX_KANBAN_PROJECT_DIR = '/root/clawd/repos/tix-kanban';
+const TIX_KANBAN_PROJECT_DIR = process.env.TIX_KANBAN_PROJECT_DIR || path.join(os.homedir(), 'tix-kanban');
 
 interface RestoreOptions {
   backupDir?: string;
@@ -240,11 +240,23 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
     }
   }
   
+  // Helper to revert checked-out commit when we need to exit early
+  const revertCommitCheckout = async () => {
+    if (fromCommit && isGitBackup) {
+      try {
+        await execAsync('git checkout HEAD -- .', { cwd: backupDir });
+      } catch {
+        console.warn('⚠️  Could not revert to HEAD. You may need to manually run: git checkout HEAD -- .');
+      }
+    }
+  };
+
   // Get files to restore
   const files = await getAllFiles(backupDir);
   
   if (files.length === 0) {
     console.log('ℹ️  No files found in backup directory.');
+    await revertCommitCheckout();
     return;
   }
   
@@ -266,6 +278,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       console.log(`  ${file.relative}`);
     }
     console.log('\n✅ Dry run complete. No files were modified.');
+    await revertCommitCheckout();
     return;
   }
   
