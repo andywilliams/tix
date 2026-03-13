@@ -1,6 +1,6 @@
 import { Client } from '@notionhq/client';
 import { loadConfig } from '../lib/config';
-import { createNotionClient, extractGitHubLinksFromText, extractPropertyValue, findProperty, findTitleProperty } from '../lib/notion';
+import { createNotionClient, extractGitHubLinksFromText, extractPropertyValue, findProperty, findPropertyName, findTitleProperty } from '../lib/notion';
 
 interface ListOptions {
   json?: boolean;
@@ -31,12 +31,10 @@ interface QueryResult {
 }
 
 export async function listCommand(options: ListOptions = {}): Promise<void> {
-  let config: any;
-  let notion: Client;
-
   try {
     // Load config inside try-catch for proper JSON error handling
-    config = loadConfig();
+    const config = loadConfig();
+    const notion: Client = createNotionClient(config);
 
     // Check for Notion API key
     if (!config.notionApiKey) {
@@ -51,13 +49,18 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
       process.exit(1);
     }
 
-    notion = createNotionClient(config);
-
     const result = await queryTickets(notion, config, options);
 
     if (options.json) {
-      // Machine-readable JSON output
-      console.log(JSON.stringify(result.tickets));
+      // Machine-readable JSON output with pagination info
+      const output = {
+        tickets: result.tickets,
+        pagination: {
+          next_cursor: result.cursor,
+          has_more: result.hasMore
+        }
+      };
+      console.log(JSON.stringify(output, null, 2));
     } else {
       // Human-readable output
       if (result.tickets.length === 0) {
@@ -226,9 +229,9 @@ async function queryTickets(
 
     // Apply client-side assignee filter if needed
     if (usedClientSideFilter && needsClientSideAssigneeFilter) {
-      // Use findProperty for case-insensitive lookup
-      const assigneePropName = findProperty(props, ['Assigned to', 'Assignee', 'Assigned', 'Owner', 'Person']);
-      const assigneeProp = props[assigneePropName];
+      // Use findPropertyName for case-insensitive lookup
+      const assigneePropName = findPropertyName(props, ['Assigned to', 'Assignee', 'Assigned', 'Owner', 'Person']);
+      const assigneeProp = assigneePropName ? props[assigneePropName] : null;
       const people = assigneeProp?.people || [];
       const filterValue = options.assignee!.toLowerCase();
       
@@ -240,9 +243,9 @@ async function queryTickets(
       }
     }
 
-    // Extract labels from multi-select - use findProperty for case-insensitive lookup
-    const labelsPropName = findProperty(props, ['Labels', 'Tags', 'Label']);
-    const labelsProp = props[labelsPropName];
+    // Extract labels from multi-select - use findPropertyName for case-insensitive lookup
+    const labelsPropName = findPropertyName(props, ['Labels', 'Tags', 'Label']);
+    const labelsProp = labelsPropName ? props[labelsPropName] : null;
     const labels: string[] = [];
     if (labelsProp?.type === 'multi_select') {
       for (const s of labelsProp.multi_select) {

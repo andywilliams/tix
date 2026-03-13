@@ -86,6 +86,19 @@ export function findProperty(properties: Record<string, any>, candidates: string
 }
 
 /**
+ * Try to find a property name by common names (case-insensitive).
+ * Returns the actual property name, not the value.
+ */
+export function findPropertyName(properties: Record<string, any>, candidates: string[]): string | null {
+  const keys = Object.keys(properties);
+  for (const candidate of candidates) {
+    const found = keys.find(k => k.toLowerCase() === candidate.toLowerCase());
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * Query tickets assigned to the configured user.
  */
 export async function queryMyTickets(
