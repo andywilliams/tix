@@ -12,7 +12,7 @@ export function createNotionClient(config: EqConfig): Client {
 /**
  * Extract a readable value from a Notion property.
  */
-function extractPropertyValue(prop: any): string {
+export function extractPropertyValue(prop: any): string {
   if (!prop) return '';
 
   switch (prop.type) {
@@ -66,7 +66,7 @@ function extractPropertyValue(prop: any): string {
 /**
  * Find the title property name in a set of properties.
  */
-function findTitleProperty(properties: Record<string, any>): string {
+export function findTitleProperty(properties: Record<string, any>): string {
   for (const [name, prop] of Object.entries(properties)) {
     if (prop.type === 'title') return name;
   }
@@ -76,13 +76,26 @@ function findTitleProperty(properties: Record<string, any>): string {
 /**
  * Try to find a property by common names (case-insensitive).
  */
-function findProperty(properties: Record<string, any>, candidates: string[]): string {
+export function findProperty(properties: Record<string, any>, candidates: string[]): string {
   const keys = Object.keys(properties);
   for (const candidate of candidates) {
     const found = keys.find(k => k.toLowerCase() === candidate.toLowerCase());
     if (found) return extractPropertyValue(properties[found]);
   }
   return '';
+}
+
+/**
+ * Try to find a property name by common names (case-insensitive).
+ * Returns the actual property name, not the value.
+ */
+export function findPropertyName(properties: Record<string, any>, candidates: string[]): string | null {
+  const keys = Object.keys(properties);
+  for (const candidate of candidates) {
+    const found = keys.find(k => k.toLowerCase() === candidate.toLowerCase());
+    if (found) return found;
+  }
+  return null;
 }
 
 /**
@@ -279,7 +292,7 @@ function extractGitHubLinksFromBlock(block: any): string[] {
 /**
  * Extract GitHub PR/repo URLs from text.
  */
-function extractGitHubLinksFromText(text: string): string[] {
+export function extractGitHubLinksFromText(text: string): string[] {
   const links: string[] = [];
   // Match GitHub PR URLs
   const prRegex = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
