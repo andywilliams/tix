@@ -56,10 +56,8 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
       // Machine-readable JSON output with pagination info
       const output = {
         tickets: result.tickets,
-        pagination: {
-          next_cursor: result.cursor,
-          has_more: result.hasMore
-        }
+        cursor: result.cursor,
+        has_more: result.hasMore
       };
       console.log(JSON.stringify(output, null, 2));
     } else {
