@@ -415,16 +415,25 @@ async function copyDirectory(
   let copied = 0;
   
   try {
+    // Count files in source that will be copied (applying filter if provided)
+    const sourceFiles = await getAllFiles(source);
+    if (filter) {
+      // Filter function only receives src path, compute dest path to pass to filter
+      copied = sourceFiles.filter(srcFile => {
+        const relativePath = path.relative(source, srcFile);
+        const destPath = path.join(destination, relativePath);
+        return filter(srcFile, destPath);
+      }).length;
+    } else {
+      copied = sourceFiles.length;
+    }
+    
     // Use fs.cp for recursive copy (Node 16.7+)
     await fs.cp(source, destination, { 
       recursive: true,
       preserveTimestamps: true,
       ...(filter && { filter }),
     });
-    
-    // Count copied files from source (not destination, to avoid counting pre-existing files)
-    const files = await getAllFiles(source);
-    copied = files.length;
     
     return { success: errors.length === 0, copied, errors };
   } catch (err: any) {
