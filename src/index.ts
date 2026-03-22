@@ -21,6 +21,7 @@ import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
 import { linkTestCommand } from './commands/link-test';
+import { backupCommand, restoreCommand } from './commands/backup';
 
 const program = new Command();
 
@@ -199,6 +200,7 @@ program
   .option('--base-url <url>', 'tix-kanban API base URL', 'http://localhost:3001/api')
   .option('--dry-run', 'Preview changes without making them')
   .option('--verbose', 'Show detailed sync information')
+  .option('--subtasks', 'Sync Notion subtasks as child tickets')
   .action(async (options: any) => {
     try {
       await kanbanSyncCommand(options);
@@ -348,6 +350,64 @@ program
   .action(async (taskId: string, suitePath: string, options: any) => {
     try {
       await linkTestCommand(taskId, suitePath, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup commands
+const backupCmd = program
+  .command('backup')
+  .description('Export activity logs and daily notes to markdown files');
+
+backupCmd
+  .option('--setup', 'Configure backup settings (path, auto-push)')
+  .option('--auto', 'Run in automated mode (suppress output, for cron)')
+  .option('--date <date>', 'Backup specific date (YYYY-MM-DD)')
+  .option('--days <number>', 'Number of days to backup (default: 1)')
+  .action(async (options: any) => {
+    try {
+      await backupCommand(options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+backupCmd
+  .command('restore')
+  .description('Restore tix-kanban data from a backup')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Convenience alias: `tix restore` -> `tix backup restore`
+program
+  .command('restore')
+  .description('Restore tix-kanban data from a backup (alias for tix backup restore)')
+  .option('-d, --backup-dir <dir>', 'Backup directory to restore from (default: ~/.tix-kanban)')
+  .option('--dry-run', 'Show what would be restored without making changes')
+  .option('--from-commit <sha>', 'Restore from a specific git commit (requires git in backup dir)')
+  .action(async (options: any) => {
+    try {
+      await restoreCommand({
+        backupDir: options.backupDir,
+        dryRun: options.dryRun || false,
+        fromCommit: options.fromCommit
+      });
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
