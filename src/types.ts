@@ -3,6 +3,7 @@ export interface BackupConfig {
   frequency: string;
   path?: string;
   maxBackups: number;
+  autoPush?: boolean;
   excludePatterns?: string[];
 }
 

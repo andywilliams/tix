@@ -20,8 +20,8 @@ import { logCommand } from './commands/log';
 import { summaryCommand } from './commands/summary';
 import { kanbanSyncCommand } from './commands/kanban-sync';
 import { remindCommand } from './commands/remind';
-import { restoreCommand, backupCommand, showBackupCategories, toggleBackupCategory } from './commands/backup';
 import { linkTestCommand } from './commands/link-test';
+import { backupCommand, restoreCommand } from './commands/backup';
 
 const program = new Command();
 
@@ -200,7 +200,6 @@ program
   .option('--base-url <url>', 'tix-kanban API base URL', 'http://localhost:3001/api')
   .option('--dry-run', 'Preview changes without making them')
   .option('--verbose', 'Show detailed sync information')
-  .option('--subtasks', 'Also sync Notion to_do checkboxes as child tasks')
   .action(async (options: any) => {
     try {
       await kanbanSyncCommand(options);
@@ -328,29 +327,47 @@ program
     }
   });
 
-// Backup commands
-const backupCmd = program
-  .command('backup')
-  .description('Manage tix-kanban backups');
-
-// Manual backup command
-backupCmd
-  .command('create')
-  .description('Create a manual backup to the configured backup directory')
-  .action(async () => {
+program
+  .command('remind <action> [args...]')
+  .description('Smart reminders — rules engine for board state alerts')
+  .allowUnknownOption()
+  .action(async (action: string, args: string[]) => {
     try {
-      await backupCommand();
+      await remindCommand(action, ...args);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
     }
   });
 
-// Convenience alias: `tix backup` -> `tix backup create`
-backupCmd
-  .action(async () => {
+program
+  .command('link-test <taskId> <suitePath>')
+  .description('Link an apix test suite to a kanban task as acceptance criteria')
+  .option('--repo <owner/repo>', 'GitHub repo for the test suite')
+  .option('--unlink', 'Remove the test suite link instead of adding it')
+  .option('--backend <backend>', 'Backend to use: dwlf (default) or local', 'dwlf')
+  .action(async (taskId: string, suitePath: string, options: any) => {
     try {
-      await backupCommand();
+      await linkTestCommand(taskId, suitePath, options);
+    } catch (err: any) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Backup commands
+const backupCmd = program
+  .command('backup')
+  .description('Export activity logs and daily notes to markdown files');
+
+backupCmd
+  .option('--setup', 'Configure backup settings (path, auto-push)')
+  .option('--auto', 'Run in automated mode (suppress output, for cron)')
+  .option('--date <date>', 'Backup specific date (YYYY-MM-DD)')
+  .option('--days <number>', 'Number of days to backup (default: 1)')
+  .action(async (options: any) => {
+    try {
+      await backupCommand(options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
@@ -376,27 +393,6 @@ backupCmd
     }
   });
 
-// Backup categories subcommand
-backupCmd
-  .command('categories')
-  .description('Show or manage backup categories (which data types to include in backups)')
-  .option('-e, --enable <category>', 'Enable a specific category (e.g., --enable tasks)')
-  .option('-d, --disable <category>', 'Disable a specific category (e.g., --disable chat)')
-  .action(async (options: any) => {
-    try {
-      if (options.enable) {
-        await toggleBackupCategory(options.enable, true);
-      } else if (options.disable) {
-        await toggleBackupCategory(options.disable, false);
-      } else {
-        await showBackupCategories();
-      }
-    } catch (err: any) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-  });
-
 // Convenience alias: `tix restore` -> `tix backup restore`
 program
   .command('restore')
@@ -411,34 +407,6 @@ program
         dryRun: options.dryRun || false,
         fromCommit: options.fromCommit
       });
-    } catch (err: any) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('remind <action> [args...]')
-  .description('Smart reminders — rules engine for board state alerts')
-  .allowUnknownOption()
-  .action(async (action: string, args: string[]) => {
-    try {
-      await remindCommand(action, ...args);
-    } catch (err: any) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('link-test <taskId> <suitePath>')
-  .description('Link an apix test suite to a kanban task as acceptance criteria')
-  .option('--repo <owner/repo>', 'GitHub repo for the test suite')
-  .option('--unlink', 'Remove the test suite link instead of adding it')
-  .option('--backend <backend>', 'Backend to use: dwlf (default) or local', 'dwlf')
-  .action(async (taskId: string, suitePath: string, options: any) => {
-    try {
-      await linkTestCommand(taskId, suitePath, options);
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
       process.exit(1);
