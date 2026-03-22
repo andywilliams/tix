@@ -234,7 +234,11 @@ export async function backupCommand(options?: {
     if (options?.date) {
       dates.push(options.date);
     } else if (options?.days) {
-      const daysCount = parseInt(options.days);
+      const daysCount = parseInt(options.days, 10);
+      if (isNaN(daysCount) || daysCount < 1) {
+        console.error(`Invalid --days value: '${options.days}'. Must be a positive integer.`);
+        process.exit(1);
+      }
       for (let i = 0; i < daysCount; i++) {
         const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
         dates.push(formatDate(date));
