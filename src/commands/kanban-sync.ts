@@ -235,6 +235,11 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
     }
   }
 
+  // Warn if --subtasks is used without Notion API key
+  if (options.subtasks && !config.notionApiKey) {
+    console.warn(chalk.yellow('⚠️  --subtasks requires a Notion API key. Run `tix notion setup` to configure it.'));
+  }
+
   // Subtask sync if --subtasks flag is set
   if (options.subtasks && config.notionApiKey) {
     console.log(chalk.bold.cyan('\n🔗 Syncing Notion subtasks...\n'));

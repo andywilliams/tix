@@ -422,8 +422,8 @@ async function copyDirectory(
       ...(filter && { filter }),
     });
     
-    // Count copied files
-    const files = await getAllFiles(destination);
+    // Count copied files from source (not destination, to avoid counting pre-existing files)
+    const files = await getAllFiles(source);
     copied = files.length;
     
     return { success: errors.length === 0, copied, errors };
