@@ -413,7 +413,9 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
   const gitInstalled = await isGitInstalled();
   const isGitBackup = await isGitRepo(backupDir);
   
-  // Handle --from-commit option
+  // Handle --from-commit: wrap in try/finally to ensure checkout is reverted
+  let needsRevert = false;
+  
   if (fromCommit) {
     if (!gitInstalled) {
       console.error('❌ Error: Git is not installed. Cannot restore from commit.');
@@ -435,16 +437,17 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       process.exit(1);
     }
     
-    // Checkout the specific commit temporarily
+    // Checkout the specific commit temporarily - wrap in try/finally to ensure revert
     try {
       await execAsync(`git checkout ${fromCommit} -- .`, { cwd: backupDir });
       console.log('✅ Checked out files from commit');
+      needsRevert = true;
     } catch (err: any) {
       console.error(`❌ Error checking out commit: ${err.message}`);
       process.exit(1);
     }
   }
-  
+
   // Get files to restore
   const files = await getAllFiles(backupDir);
   
@@ -471,6 +474,17 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       console.log(`  ${file.relative}`);
     }
     console.log('\n✅ Dry run complete. No files were modified.');
+    
+    // Revert checkout if we checked out a commit
+    if (needsRevert) {
+      try {
+        await execAsync('git checkout HEAD -- .', { cwd: backupDir });
+        console.log('🔄 Reverted to HEAD after dry-run.');
+      } catch {
+        console.warn('⚠️  Could not revert to HEAD. You may need to manually run: git checkout HEAD -- .');
+      }
+    }
+    
     return;
   }
   
@@ -512,6 +526,24 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       // Ensure target directory exists
       const targetDir = path.dirname(file.target);
       await fs.promises.mkdir(targetDir, { recursive: true });
+      
+      // Check if target file exists and has identical content - skip if so
+      let shouldSkip = false;
+      try {
+        const sourceContent = await fs.promises.readFile(file.source);
+        const targetContent = await fs.promises.readFile(file.target);
+        if (sourceContent.equals(targetContent)) {
+          shouldSkip = true;
+        }
+      } catch {
+        // Target doesn't exist - we'll copy it
+        shouldSkip = false;
+      }
+      
+      if (shouldSkip) {
+        skippedCount++;
+        continue;
+      }
       
       // Copy file
       await fs.promises.copyFile(file.source, file.target);
