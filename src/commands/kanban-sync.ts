@@ -185,6 +185,15 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
         } catch (err) {
           console.error(chalk.red(`Failed to update task ${existing.id}:`), err);
         }
+      } else if (needsUpdate && dryRun) {
+        // Show dry-run preview
+        console.log(chalk.blue(`[DRY RUN] Would update: ${kanbanTask.title}`));
+        if (verbose) {
+          if (statusChanged && notionIsNewer) console.log(chalk.dim(`  status: ${existing.status} → ${kanbanTask.status}`));
+          if (priorityChanged && notionIsNewer) console.log(chalk.dim(`  priority: ${existing.priority} → ${kanbanTask.priority}`));
+          if (descriptionNeedsUpdate) console.log(chalk.dim(`  description: would add Notion URL`));
+        }
+        updated++;
       } else {
         if (verbose) {
           if (statusChanged && !notionIsNewer) {
@@ -253,7 +262,8 @@ export async function kanbanSyncCommand(options: KanbanSyncOptions = {}): Promis
         config.userName,
         syncState,
         verbose,
-        dryRun
+        dryRun,
+        existingTasks
       );
 
       totalSubtasksCreated += result.created;
@@ -368,7 +378,8 @@ async function syncSubtasks(
   assignee: string,
   syncState: SubtaskSyncState,
   verbose: boolean,
-  dryRun: boolean
+  dryRun: boolean,
+  existingKanbanTasks: KanbanTask[]
 ): Promise<{ created: number; skipped: number }> {
   let created = 0;
   let skipped = 0;
@@ -385,10 +396,17 @@ async function syncSubtasks(
     const syncKey = `notion-${notionPageId}-${todo.blockId}`;
 
     if (syncState.synced[syncKey]) {
-      // Already synced
-      if (verbose) console.log(chalk.dim(`  ⏭️ Subtask already synced: ${todo.text.substring(0, 50)}`));
-      skipped++;
-      continue;
+      const linkedTaskId = syncState.synced[syncKey];
+      // Verify the task still exists in kanban
+      const taskStillExists = existingKanbanTasks.some((t: KanbanTask) => t.id === linkedTaskId);
+      if (taskStillExists) {
+        if (verbose) console.log(chalk.dim(`  ⏭️ Subtask already synced: ${todo.text.substring(0, 50)}`));
+        skipped++;
+        continue;
+      }
+      // Task was deleted/doesn't exist — remove stale sync state and re-sync
+      if (verbose) console.log(chalk.dim(`  🔄 Re-syncing subtask (linked task no longer exists): ${todo.text.substring(0, 50)}`));
+      delete syncState.synced[syncKey];
     }
 
     if (dryRun) {
