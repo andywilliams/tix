@@ -289,8 +289,24 @@ export async function backupCommand(options?: {
 
 const STORAGE_DIR = path.join(process.env.HOME || '~', '.tix-kanban');
 
+// Strict pattern for git refs (commit SHAs, branch names, tags)
+// Allows: alphanumeric, underscores, hyphens, dots, forward slashes
+// Max 200 chars to prevent DoS
+const GIT_REF_PATTERN = /^[a-zA-Z0-9_\-\.\/]{1,200}$/;
+
+/**
+ * Validate a git ref/commit to prevent shell injection
+ */
+function validateGitRef(ref: string): void {
+  if (!GIT_REF_PATTERN.test(ref)) {
+    throw new Error(
+      `Invalid git ref: '${ref}'. Must match pattern: alphanumeric, underscore, hyphen, dot, forward slash (1-200 chars)`
+    );
+  }
+}
+
 interface RestoreOptions {
-  backupDir?: string;
+  backupDir: string; // Now required, not optional
   dryRun: boolean;
   fromCommit?: string;
 }
@@ -354,9 +370,33 @@ async function getAllFiles(dir: string): Promise<string[]> {
  * Restore files from backup directory to the live location
  */
 export async function restoreCommand(options: RestoreOptions): Promise<void> {
-  const backupDir = options.backupDir || STORAGE_DIR;
+  // BUG 1 FIX: Require backupDir and validate it's not the same as restore destination
+  if (!options.backupDir) {
+    console.error('❌ Error: --backup-dir is required. Cannot determine backup location.');
+    console.log('Usage: tix restore --backup-dir <path>');
+    process.exit(1);
+  }
+
+  const backupDir = options.backupDir;
   const dryRun = options.dryRun;
   const fromCommit = options.fromCommit;
+
+  // Validate backupDir is not the same as STORAGE_DIR (restore destination)
+  const resolvedBackupDir = path.resolve(backupDir);
+  const resolvedStorageDir = path.resolve(STORAGE_DIR);
+  
+  if (resolvedBackupDir === resolvedStorageDir) {
+    console.error(`❌ Error: backupDir cannot be the same as the restore destination (${STORAGE_DIR}).`);
+    console.error('This would copy files over themselves, causing data loss.');
+    console.log(`\nProvide a different backup directory, e.g.:`);
+    console.log(`  tix restore --backup-dir ~/.tix-backup`);
+    process.exit(1);
+  }
+
+  // BUG 2 FIX: Validate fromCommit against shell injection
+  if (fromCommit) {
+    validateGitRef(fromCommit);
+  }
   
   console.log('\n🔄 Tix-Kanban Backup Restore');
   console.log('============================\n');
