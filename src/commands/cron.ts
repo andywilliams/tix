@@ -177,9 +177,14 @@ class CronManager {
     taskTitle?: string;
   }> {
     try {
+      const apiKey = process.env.DWLF_API_KEY;
+      if (!apiKey) {
+        throw new Error('DWLF_API_KEY environment variable is required (set it with: export DWLF_API_KEY=dwlf_sk_...)');
+      }
+
       // Fetch backlog tasks from DWLF Kanban API
       const { stdout: tasksJson } = await execAsync(
-        `curl -s "https://api.dwlf.co.uk/v2/kanban/tasks?status=backlog" -H "Authorization: ApiKey DWLF_API_KEY_REMOVED"`
+        `curl -s "https://api.dwlf.co.uk/v2/kanban/tasks?status=backlog" -H "Authorization: ApiKey ${apiKey}"`
       );
 
       const tasksResponse = JSON.parse(tasksJson);
@@ -200,7 +205,7 @@ class CronManager {
 
       // Check if task already has work done
       const { stdout: taskDetailsJson } = await execAsync(
-        `curl -s "https://api.dwlf.co.uk/v2/kanban/tasks/${topTask.taskId}" -H "Authorization: ApiKey DWLF_API_KEY_REMOVED"`
+        `curl -s "https://api.dwlf.co.uk/v2/kanban/tasks/${topTask.taskId}" -H "Authorization: ApiKey ${apiKey}"`
       );
 
       const taskDetails = JSON.parse(taskDetailsJson);
@@ -222,7 +227,7 @@ class CronManager {
 
       // Move task to in-progress
       await execAsync(
-        `curl -s -X PUT "https://api.dwlf.co.uk/v2/kanban/tasks/${topTask.taskId}" -H "Authorization: ApiKey DWLF_API_KEY_REMOVED" -H "Content-Type: application/json" -d '{"status":"in-progress"}'`
+        `curl -s -X PUT "https://api.dwlf.co.uk/v2/kanban/tasks/${topTask.taskId}" -H "Authorization: ApiKey ${apiKey}" -H "Content-Type: application/json" -d '{"status":"in-progress"}'`
       );
 
       // Create persona prompt for Claude CLI
